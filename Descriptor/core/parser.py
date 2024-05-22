@@ -167,6 +167,8 @@ def get_origin(o) -> Optional[List[float]]:
         return get_origin(o.origin)
     elif isinstance(o, adsk.core.Vector3D):
         return o.asArray()
+    elif isinstance(o, adsk.core.Point3D):
+        return o.asArray()
     elif o is None:
         return None
     elif  isinstance(o, adsk.fusion.JointOrigin):
