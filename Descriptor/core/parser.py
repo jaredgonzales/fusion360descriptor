@@ -303,14 +303,21 @@ class Configurator:
 
         occs_dict['mass'] = mass
 
-        print(f"{oc.name}: origin={oc.transform2.getAsCoordinateSystem()[0]}, translation={oc.transform2.translation}, center_mass(global)={prop.centerOfMass}, center_mass(transformed)={prop.centerOfMass.transformBy(oc.transform2)}")
+        center_of_mass = prop.centerOfMass.copy()
+        if not center_of_mass.transformBy(oc.transform2): #XXX: Inverse?
+            raise RuntimeError("Center of mass transform failed")
+
+        print(f"{oc.name}: origin={oc.transform2.getAsCoordinateSystem()[0]}, translation={oc.transform2.translation}, center_mass(global)={prop.centerOfMass}, center_mass(transformed)={center_of_mass}")
 
         # cm -> m
-        occs_dict['center_of_mass'] = [_/self.scale for _ in prop.centerOfMass.transformBy(oc.transform2)] #XXX: Inverse?
+        occs_dict['center_of_mass'] = [_/self.scale for _ in center_of_mass]
+
+        moments = prop.getXYZMomentsOfInertia()
+        if not moments[0]:
+            raise RuntimeError("Retrieving moments of inertia failed")
 
         # https://help.autodesk.com/view/fusion360/ENU/?guid=GUID-ce341ee6-4490-11e5-b25b-f8b156d7cd97
-        (_, xx, yy, zz, xy, yz, xz) = prop.getXYZMomentsOfInertia().transformBy(oc.transform2) #XXX: Inverse?
-        occs_dict['inertia'] = [_ / self.inertia_scale for _ in [xx, yy, zz, xy, yz, xz] ] ## kg / cm^2 -> kg/m^2
+        occs_dict['inertia'] = [_ / self.inertia_scale for _ in transforms.origin2center_of_mass(moments[1:], prop.centerOfMass.asArray(), mass) ] ## kg / cm^2 -> kg/m^2
 
         return occs_dict
 
@@ -623,10 +630,13 @@ class Configurator:
 
             (child_origin, child_x, child_y, child_z) = j['child_transform'].getAsCoordinateSystem()
             (parent_origin, parent_x, parent_y, parent_z) = j['parent_transform'].getAsCoordinateSystem()
+            rel_origin = child_origin.copy()
+            if not rel_origin.transformBy(j['parent_transform']):
+                raise RuntimeError("Joint coordinate transform failed")
             if child_x != parent_x or child_y != parent_y or child_z != parent_z:
                 raise RuntimeError(f"child {j['child']} is rotated w.r.t parent {j['parent']} in link {k}: not supported")
-            print(f"child {j['child']} @ {child_origin} w.r.t parent {j['parent']} @ {parent_origin} in link {k}:{child_origin.transformBy(j['parent_transform'])}")
-            xyz = [_/self.scale for _ in child_origin.transformBy(j['parent_transform'])]
+            print(f"child {j['child']} @ {child_origin} w.r.t parent {j['parent']} @ {parent_origin} in link {k}:{rel_origin}")
+            xyz = [_/self.scale for _ in rel_origin]
 
             joint = parts.Joint(name=k , joint_type=j['type'], 
                                 xyz=xyz, axis=j['axis'], 
