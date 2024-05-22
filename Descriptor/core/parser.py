@@ -465,6 +465,7 @@ class Configurator:
         # Add RigidGroups as fixed joints
         for group in self.root.allRigidGroups:
             original_group_name = group.name
+            print(f"Processing Rigid Group {original_group_name}")
             for i, occ in enumerate(group.occurrences):
                 # Assumes that the first occurrence will be the parent
                 if i == 0:
@@ -495,7 +496,7 @@ class Configurator:
                 joint_dict['child_token'] = occ.entityToken
                 joint_dict['parent_transform'] = parent_occ.transform2
                 joint_dict['child_transform'] = occ.transform2
-                print(f"Fixed joint from rigid group, parent={parent_occ_name}, child={occ_name}")
+                print(f"Fixed joint from rigid group {rigid_group_occ_name}, parent={parent_occ_name}, child={occ_name}")
                 self.joints_dict[rigid_group_occ_name] = joint_dict
 
         occurrences = defaultdict(list)
@@ -656,7 +657,7 @@ class Configurator:
                 raise RuntimeError("Joint coordinate transform failed")
             if not self.close_enough([child_x, child_y, child_z], [parent_x, parent_y, parent_z]):
                 raise RuntimeError(f"child {j['child']} is rotated w.r.t parent {j['parent']} in link {k}: not supported")
-            print(f"child {j['child']} @ {child_origin.asArray()} w.r.t parent {j['parent']} @ {parent_origin.asArray()} in link {k}:{rel_origin.asArray()}")
+            print(f"Child {j['child']} @ {child_origin.asArray()} w.r.t parent {j['parent']} @ {parent_origin.asArray()} in link {k}:{rel_origin.asArray()}")
             xyz = [_/self.scale for _ in rel_origin.asArray()]
 
             joint = parts.Joint(name=k , joint_type=j['type'], 
