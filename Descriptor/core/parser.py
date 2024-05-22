@@ -304,7 +304,10 @@ class Configurator:
         occs_dict['mass'] = mass
 
         center_of_mass = prop.centerOfMass.copy()
-        if not center_of_mass.transformBy(oc.transform2): #XXX: Inverse?
+        transform = oc.transform2.copy()
+        if not transform.invert():
+            raise RuntimeError("Inverse transform failed")
+        if not center_of_mass.transformBy(transform):
             raise RuntimeError("Center of mass transform failed")
 
         print(f"{oc.name}: origin={oc.transform2.getAsCoordinateSystem()[0].asArray()}, translation={oc.transform2.translation.asArray()}, center_mass(global)={prop.centerOfMass.asArray()}, center_mass(transformed)={center_of_mass.asArray()}")
@@ -388,7 +391,7 @@ class Configurator:
                 geom_two_origin = None
 
             if geom_two_origin is not None and geom_two_origin != geom_one_origin:
-                raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
+                raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins {geom_one_origin} and {geom_two_origin} that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
             
             joint_type = joint.jointMotion.objectType # string 
             
@@ -631,7 +634,11 @@ class Configurator:
             (child_origin, child_x, child_y, child_z) = j['child_transform'].getAsCoordinateSystem()
             (parent_origin, parent_x, parent_y, parent_z) = j['parent_transform'].getAsCoordinateSystem()
             rel_origin = child_origin.copy()
-            if not rel_origin.transformBy(j['parent_transform']):
+            transform = j['parent_transform']
+            if not transform.invert():
+                raise RuntimeError("Parent coordinate transform inverse failed")
+            transform = j['parent_transform']
+            if not rel_origin.transformBy():
                 raise RuntimeError("Joint coordinate transform failed")
             if child_x != parent_x or child_y != parent_y or child_z != parent_z:
                 raise RuntimeError(f"child {j['child']} is rotated w.r.t parent {j['parent']} in link {k}: not supported")
