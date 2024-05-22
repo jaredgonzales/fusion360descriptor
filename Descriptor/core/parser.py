@@ -2,6 +2,7 @@
 module to parse fusion file 
 '''
 
+from typing import List, Optional
 import adsk, adsk.core, adsk.fusion
 from . import transforms
 from . import parts
@@ -160,6 +161,18 @@ class Hierarchy:
             if occ.childOccurrences:
                 Hierarchy.traverse(occ.childOccurrences, parent=cur)
         return cur
+
+def get_origin(o) -> Optional[List[float]]:
+    if isinstance(o, adsk.fusion.JointGeometry):
+        return get_origin(o.origin)
+    elif isinstance(o, adsk.core.Vector3D):
+        return o.asArray()
+    elif o is None:
+        return None
+    elif  isinstance(o, adsk.fusion.JointOrigin):
+        return get_origin(o.geometry)
+    else:
+        raise ValueError(f"get_origin: unexpected {o} of type {type(o)}")
 
 class Configurator:
 
@@ -384,11 +397,10 @@ class Configurator:
             print(f"Processing joint {orig_name} of type {joint_type}, between {occ_one.name} and {occ_two.name}")
 
             try:
-                geom_one_origin = joint.geometryOrOriginOne.origin.asArray()
-            except RuntimeError:
+                geom_one_origin = get_origin(joint.geometryOrOriginOne)
                 geom_one_origin = None
             try:
-                geom_two_origin = joint.geometryOrOriginTwo.origin.asArray()
+                geom_two_origin = get_origin(joint.geometryOrOriginTwo)
             except RuntimeError:
                 geom_two_origin = None
 
