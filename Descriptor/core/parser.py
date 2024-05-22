@@ -654,9 +654,9 @@ class Configurator:
                 raise RuntimeError("Parent coordinate transform inverse failed")
             if not rel_origin.transformBy(transform):
                 raise RuntimeError("Joint coordinate transform failed")
-            if not self.self.close_enough([child_x, child_y, child_z], [parent_x, parent_y, parent_z]):
+            if not self.close_enough([child_x, child_y, child_z], [parent_x, parent_y, parent_z]):
                 raise RuntimeError(f"child {j['child']} is rotated w.r.t parent {j['parent']} in link {k}: not supported")
-            print(f"child {j['child']} @ {child_origin} w.r.t parent {j['parent']} @ {parent_origin.asArray()} in link {k}:{rel_origin.asArray()}")
+            print(f"child {j['child']} @ {child_origin.asArray()} w.r.t parent {j['parent']} @ {parent_origin.asArray()} in link {k}:{rel_origin.asArray()}")
             xyz = [_/self.scale for _ in rel_origin.asArray()]
 
             joint = parts.Joint(name=k , joint_type=j['type'], 
