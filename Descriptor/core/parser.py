@@ -361,20 +361,6 @@ class Configurator:
             if occ.isLightBulbOn:
                 self.inertial_dict[occ.entityToken] = self._get_inertia(occ)
 
-    def _is_joint_valid(self, joint):
-        '''_summary_
-        Parameters
-        ----------
-        joint : _type_
-            _description_
-        '''
-
-        try: 
-            joint.geometryOrOriginOne.origin.asArray()
-            return True
-        except:
-            return False
-
 
     def _joints(self):
         ''' Iterates over joints list and defines properties for each joint
@@ -383,11 +369,6 @@ class Configurator:
 
         for joint in self.root.allJoints:
             joint_dict = {}
-
-            # Check that both bodies are valid (e.g. there is no missing reference)
-            if not self._is_joint_valid(joint):
-                # TODO: Handle in a better way (like warning message)
-                continue
 
             orig_name = joint.name
             # Rename if the joint already exists in our dictionary
@@ -402,13 +383,16 @@ class Configurator:
 
             print(f"Processing joint {orig_name} of type {joint_type}, between {occ_one.name} and {occ_two.name}")
 
-            geom_one_origin = joint.geometryOrOriginOne.origin.asArray()
+            try:
+                geom_one_origin = joint.geometryOrOriginOne.origin.asArray()
+            except RuntimeError:
+                geom_one_origin = None
             try:
                 geom_two_origin = joint.geometryOrOriginTwo.origin.asArray()
             except RuntimeError:
                 geom_two_origin = None
 
-            if geom_two_origin is not None and not self.close_enough(geom_two_origin, geom_one_origin):
+            if geom_one_origin is not None and geom_two_origin is not None and not self.close_enough(geom_two_origin, geom_one_origin):
                 raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins {geom_one_origin} and {geom_two_origin} that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
             
             joint_type = joint.jointMotion.objectType # string 
