@@ -398,6 +398,7 @@ class Configurator:
 
             try:
                 geom_one_origin = get_origin(joint.geometryOrOriginOne)
+            except RuntimeError:
                 geom_one_origin = None
             try:
                 geom_two_origin = get_origin(joint.geometryOrOriginTwo)
