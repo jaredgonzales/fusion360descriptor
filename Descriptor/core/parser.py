@@ -171,7 +171,7 @@ def get_origin(o) -> Optional[List[float]]:
         return o.asArray()
     elif o is None:
         return None
-    elif  isinstance(o, adsk.fusion.JointOrigin):
+    elif isinstance(o, adsk.fusion.JointOrigin):
         return get_origin(o.geometry)
     else:
         raise ValueError(f"get_origin: unexpected {o} of type {type(o)}")
@@ -407,7 +407,7 @@ class Configurator:
             except RuntimeError:
                 geom_two_origin = None
 
-            if geom_one_origin is not None and geom_two_origin is not None and not self.close_enough(geom_two_origin, geom_one_origin):
+            if joint_type != "fixed" and geom_one_origin is not None and geom_two_origin is not None and not self.close_enough(geom_two_origin, geom_one_origin):
                 raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins {geom_one_origin} and {geom_two_origin} that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
             
             joint_type = joint.jointMotion.objectType # string 
