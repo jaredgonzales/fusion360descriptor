@@ -391,7 +391,7 @@ class Configurator:
             except RuntimeError:
                 geom_two_origin = None
 
-            if geom_two_origin is not None and not all((math.isclose(one, two) for one, two in zip(geom_two_origin, geom_one_origin)):
+            if geom_two_origin is not None and not all((math.isclose(one, two) for one, two in zip(geom_two_origin, geom_one_origin))):
                 raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins {geom_one_origin} and {geom_two_origin} that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
             
             joint_type = joint.jointMotion.objectType # string 
@@ -638,8 +638,7 @@ class Configurator:
             transform = j['parent_transform']
             if not transform.invert():
                 raise RuntimeError("Parent coordinate transform inverse failed")
-            transform = j['parent_transform']
-            if not rel_origin.transformBy():
+            if not rel_origin.transformBy(transform):
                 raise RuntimeError("Joint coordinate transform failed")
             if child_x != parent_x or child_y != parent_y or child_z != parent_z:
                 raise RuntimeError(f"child {j['child']} is rotated w.r.t parent {j['parent']} in link {k}: not supported")
