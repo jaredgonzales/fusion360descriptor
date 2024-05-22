@@ -635,7 +635,7 @@ class Configurator:
             (child_origin, child_x, child_y, child_z) = j['child_transform'].getAsCoordinateSystem()
             (parent_origin, parent_x, parent_y, parent_z) = j['parent_transform'].getAsCoordinateSystem()
             rel_origin = child_origin.copy()
-            transform = j['parent_transform']
+            transform = j['parent_transform'].copy()
             if not transform.invert():
                 raise RuntimeError("Parent coordinate transform inverse failed")
             if not rel_origin.transformBy(transform):
