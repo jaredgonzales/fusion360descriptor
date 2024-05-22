@@ -2,6 +2,7 @@
 module to parse fusion file 
 '''
 
+import math
 import adsk, adsk.core, adsk.fusion
 from . import transforms
 from . import parts
@@ -390,7 +391,7 @@ class Configurator:
             except RuntimeError:
                 geom_two_origin = None
 
-            if geom_two_origin is not None and geom_two_origin != geom_one_origin:
+            if geom_two_origin is not None and not all((math.isclose(one, two) for one, two in zip(geom_two_origin, geom_one_origin)):
                 raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins {geom_one_origin} and {geom_two_origin} that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
             
             joint_type = joint.jointMotion.objectType # string 
