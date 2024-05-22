@@ -389,6 +389,7 @@ class Configurator:
                 # TODO: Handle in a better way (like warning message)
                 continue
 
+            orig_name = joint.name
             # Rename if the joint already exists in our dictionary
             joint.name = utils.rename_if_duplicate(joint.name, self.joints_dict)
             joint_dict['token'] = joint.entityToken
@@ -398,6 +399,8 @@ class Configurator:
 
             occ_one = joint.occurrenceOne
             occ_two = joint.occurrenceTwo
+
+            print(f"Processing joint {orig_name} of type {joint_type}, between {occ_one.name} and {occ_two.name}")
 
             geom_one_origin = joint.geometryOrOriginOne.origin.asArray()
             try:
