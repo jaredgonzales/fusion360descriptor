@@ -201,10 +201,13 @@ class Configurator:
         elif isinstance(a, list) and isinstance(b, list):
             assert len(a) == len(b)
             return all((self.close_enough(aa,bb) for aa,bb in zip(a,b)))
+        elif isinstance(a, tuple) and isinstance(b, tuple):
+            assert len(a) == len(b)
+            return all((self.close_enough(aa,bb) for aa,bb in zip(a,b)))
         elif isinstance(a, adsk.core.Vector3D) and isinstance(b, adsk.core.Vector3D):
             return self.close_enough(a.asArray(), b.asArray())
         else:
-            raise ValueError(f"close_enough: {type(a)} and {type{b}}: not supported")
+            raise ValueError(f"close_enough: {type(a)} and {type(b)}: not supported")
 
     def get_scene_configuration(self):
         '''Build the graph of how the scene components are related
