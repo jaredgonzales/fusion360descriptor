@@ -2,7 +2,6 @@
 module to parse fusion file 
 '''
 
-import math
 import adsk, adsk.core, adsk.fusion
 from . import transforms
 from . import parts
@@ -189,11 +188,23 @@ class Configurator:
         self.joints = {} # Joint class for writing to file
         self.joint_order = ('p','c') # Order of joints defined by components
         self.scale = 100.0 # Units to convert to meters (or whatever simulator takes)
+        self.eps = 1e-7 * self.scale
         self.inertia_scale = 10000.0 # units to convert mass
         self.base_link: adsk.fusion.Occurrence = None
         self.component_map: dict[str, Hierarchy] = dict() # Entity tokens for each component
 
         self.root_node = None
+
+    def close_enough(self, a, b) -> bool:
+        if isinstance(a, float) and isinstance(b, float):
+            return abs(a-b) < self.eps
+        elif isinstance(a, list) and isinstance(b, list):
+            assert len(a) == len(b)
+            return all((self.close_enough(aa,bb) for aa,bb in zip(a,b)))
+        elif isinstance(a, adsk.core.Vector3D) and isinstance(b, adsk.core.Vector3D):
+            return self.close_enough(a.asArray(), b.asArray())
+        else:
+            raise ValueError(f"close_enough: {type(a)} and {type{b}}: not supported")
 
     def get_scene_configuration(self):
         '''Build the graph of how the scene components are related
@@ -391,7 +402,7 @@ class Configurator:
             except RuntimeError:
                 geom_two_origin = None
 
-            if geom_two_origin is not None and not all((math.isclose(one, two) for one, two in zip(geom_two_origin, geom_one_origin))):
+            if geom_two_origin is not None and not self.close_enough(geom_two_origin, geom_one_origin):
                 raise RuntimeError(f'Occurrences {occ_one.name} and {occ_two.name} of non-fixed {joint.name} have origins {geom_one_origin} and {geom_two_origin} that do not coincide. Make sure the joint is "at 0 / at home" before exporting')
             
             joint_type = joint.jointMotion.objectType # string 
@@ -640,7 +651,7 @@ class Configurator:
                 raise RuntimeError("Parent coordinate transform inverse failed")
             if not rel_origin.transformBy(transform):
                 raise RuntimeError("Joint coordinate transform failed")
-            if child_x != parent_x or child_y != parent_y or child_z != parent_z:
+            if not self.self.close_enough([child_x, child_y, child_z], [parent_x, parent_y, parent_z]):
                 raise RuntimeError(f"child {j['child']} is rotated w.r.t parent {j['parent']} in link {k}: not supported")
             print(f"child {j['child']} @ {child_origin} w.r.t parent {j['parent']} @ {parent_origin.asArray()} in link {k}:{rel_origin.asArray()}")
             xyz = [_/self.scale for _ in rel_origin.asArray()]
