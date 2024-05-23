@@ -221,7 +221,7 @@ class Configurator:
             return all((self.close_enough(aa,bb) for aa,bb in zip(a,b)))
         elif isinstance(a, adsk.core.Vector3D) and isinstance(b, adsk.core.Vector3D):
             return self.close_enough(a.asArray(), b.asArray())
-        elif isinstance(a, adsk.core.Vector3D) and isinstance(b, adsk.core.Point3D):
+        elif isinstance(a, adsk.core.Point3D) and isinstance(b, adsk.core.Point3D):
             return self.close_enough(a.asArray(), b.asArray())
         else:
             raise ValueError(f"close_enough: {type(a)} and {type(b)}: not supported")
@@ -284,7 +284,6 @@ class Configurator:
         ''' parse the scene by building up inertia and joints'''
 
         self._base()
-        self._inertia()
         self._joints()
         self._materials()
         self._build()
