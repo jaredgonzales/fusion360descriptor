@@ -489,8 +489,7 @@ class Configurator:
         #fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
 
         link = parts.Link(name = inertia['name'],
-                        #xyz = ((f-u)/ self.scale for f,u in zip(fusion_origin, urdf_origin)),
-                        xyz = (-u/self.scale  for u in urdf_origin),
+                        xyz = (-(u+o)/self.scale  for u, o in zip(urdf_origin, self.base_link_origin)),
                         center_of_mass = inertia['center_of_mass'],
                         sub_folder = self.mesh_folder,
                         mass = inertia['mass'],
@@ -584,8 +583,8 @@ class Configurator:
             occurrences[joint_dict["parent"]].append(joint_name)
             occurrences[joint_dict["child"]].append(joint_name)
         grounded_occ = {"base_link"}
-        # First option places URDF origin at base link origin; second places it at Fusion global origin
-        # self.link_origins["base_link"] = self.base_link.transform2.getAsCoordinateSystem()[0].asArray()
+        self.base_link_origin = self.base_link.transform2.getAsCoordinateSystem()[0].asArray()
+        # We place URDF origin at base link origin rather than at Fusion global origin
         self.link_origins["base_link"] = (0, 0, 0)
         self.__add_link(self.base_link)
         boundary = grounded_occ
