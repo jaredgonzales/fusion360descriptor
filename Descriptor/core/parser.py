@@ -483,7 +483,7 @@ class Configurator:
 
         link = parts.Link(name = inertia['name'],
                         #xyz = ((f-u)/ self.scale for f,u in zip(fusion_origin, urdf_origin)),
-                        xyz = (-u for u in urdf_origin),
+                        xyz = (-u/self.scale  for u in urdf_origin),
                         center_of_mass = inertia['center_of_mass'],
                         sub_folder = self.mesh_folder,
                         mass = inertia['mass'],
