@@ -476,6 +476,11 @@ class Configurator:
                 print(f"Fixed joint from rigid group {rigid_group_occ_name}, parent={parent_occ_name}, child={occ_name}")
                 self.joints_dict[rigid_group_occ_name] = joint_dict
 
+        # Sanity check
+        for component in self._iterate_through_occurrences():
+            if component.isLightBulbOn and not component.entityToken in self.links_by_token:
+                raise RuntimeError(f"Component {component.name} is unreacheable from ground component via joints+links")
+
     def __add_link(self, occ: adsk.fusion.Occurrence):
         inertia = self._get_inertia(occ)
         urdf_origin = self.link_origins[inertia['name']]
@@ -543,7 +548,7 @@ class Configurator:
         self.body_dict = defaultdict(list) # key : occurrence name -> value : list of bodies under that occurrence
         self.body_dict_urdf = defaultdict(list) # list to send to parts.py
         duplicate_bodies = defaultdict(int) # key : name -> value : # of instances
-        self.link_origins: Dict[str, Tuple[float,float,float]] = {} # Location of the URDF link origin w.r.t global frame in Fusion units
+        self.link_origins: Dict[str, Tuple[float,float,float]] = {} # Location of the URDF link origin w.r.t Fusion global frame in Fusion units
 
         oc_name = ''
         # Make sure no repeated body names
@@ -577,7 +582,9 @@ class Configurator:
             occurrences[joint_dict["parent"]].append(joint_name)
             occurrences[joint_dict["child"]].append(joint_name)
         grounded_occ = {"base_link"}
-        self.link_origins["base_link"] = (0,0,0)
+        # First option places URDF origin at base link origin; second places it at Fusion global origin
+        # self.link_origins["base_link"] = self.base_link.transform2.getAsCoordinateSystem()[0].asArray()
+        self.link_origins["base_link"] = (0, 0, 0)
         self.__add_link(self.base_link)
         boundary = grounded_occ
         while boundary:
@@ -600,11 +607,12 @@ class Configurator:
                     new_boundary.add(child_name)
 
                     (child_origin, child_x, child_y, child_z) = self.links_by_name[child_name].transform2.getAsCoordinateSystem()
-                    (parent_origin, parent_x, parent_y, parent_z) = self.links_by_name[occ_name].transform2.getAsCoordinateSystem()
+                    (_, parent_x, parent_y, parent_z) = self.links_by_name[occ_name].transform2.getAsCoordinateSystem()
 
                     if not self.close_enough([child_x, child_y, child_z], [parent_x, parent_y, parent_z]):
                         raise RuntimeError(f"child {child_name} is rotated w.r.t parent {occ_name} in link {joint['name']}: not supported")
                     
+                    parent_origin = self.link_origins[occ_name]
                     if joint['type'] != 'fixed':
                         child_origin = joint["origin"]
                     else:
@@ -612,7 +620,7 @@ class Configurator:
 
                     self.link_origins[child_name] = child_origin
                     
-                    xyz = [(c-p)/self.scale for c,p in zip(child_origin, parent_origin.asArray())]
+                    xyz = [(c-p)/self.scale for c,p in zip(child_origin, parent_origin)]
 
                     self.joints[joint['name']] = parts.Joint(name=joint['name'] , joint_type=joint['type'], 
                                         xyz=xyz, axis=joint['axis'], 
