@@ -377,9 +377,9 @@ class Configurator:
 
             orig_name = joint.name
             # Rename if the joint already exists in our dictionary
-            joint.name = utils.rename_if_duplicate(joint.name, self.joints_dict)
+            name = utils.rename_if_duplicate(joint.name, self.joints_dict)
             joint_dict['token'] = joint.entityToken
-            joint_dict['name'] = joint.name
+            joint_dict['name'] = name
 
             joint_type = Configurator.joint_type_list[joint.jointMotion.jointType]
             joint_dict['type'] = joint_type
@@ -448,8 +448,8 @@ class Configurator:
             else:
                 raise ValueError(f'Order {self.joint_order} not supported')
 
-            self.joints_dict[joint.name] = joint_dict
-            print(f"Got from Fusion: {joint_dict['type']} {joint.name} connecting",
+            self.joints_dict[name] = joint_dict
+            print(f"Got from Fusion: {joint_dict['type']} {name} connecting",
                   f"{occ_one_name} @ {occ_one.transform2.getAsCoordinateSystem()[0].asArray()} and",
                   f"{occ_two_name} @ {occ_two.transform2.getAsCoordinateSystem()[0].asArray()}", sep="\n\t")
             print("\tOrigin 1:", geom_one_origin.asArray() if geom_one_origin is not None else None)
