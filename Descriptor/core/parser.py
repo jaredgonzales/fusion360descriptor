@@ -460,6 +460,7 @@ class Configurator:
                     continue
                 joint_dict = {}
                 rigid_group_occ_name = utils.rename_if_duplicate(original_group_name, self.joints_dict)
+                joint_dict['name'] = rigid_group_occ_name
                 joint_dict['type'] = 'fixed'
 
                 # Unneeded for fixed joints
@@ -474,7 +475,7 @@ class Configurator:
                 print(f"Fixed joint from rigid group {rigid_group_occ_name}, parent={parent_occ_name}, child={occ_name}")
                 self.joints_dict[rigid_group_occ_name] = joint_dict
 
-    def __add_link(self, occ: adsk.fusion.Occurrence, xyz):
+    def __add_link(self, occ: adsk.fusion.Occurrence):
         inertia = self._get_inertia(occ)
         urdf_origin = self.link_origins[inertia['name']]
         fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
@@ -611,11 +612,10 @@ class Configurator:
                     
                     xyz = [c-p/self.scale for c,p in zip(child_origin, parent_origin.asArray())]
 
-                    joint = parts.Joint(name=joint['name'] , joint_type=joint['type'], 
+                    self.joints[joint['name']] = parts.Joint(name=joint['name'] , joint_type=joint['type'], 
                                         xyz=xyz, axis=joint['axis'], 
                                         parent=occ_name, child=child_name, 
                                         upper_limit=joint['upper_limit'], lower_limit=joint['lower_limit'])
-                    self.joints[joint['name']] = joint
                     
                     self.__add_link(self.links_by_name[child_name])
 
