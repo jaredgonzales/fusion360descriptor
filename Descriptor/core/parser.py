@@ -350,7 +350,8 @@ class Configurator:
         print(f"{oc.name}: origin={oc.transform2.getAsCoordinateSystem()[0].asArray()}, translation={oc.transform2.translation.asArray()}, center_mass(global)={prop.centerOfMass.asArray()}, center_mass(transformed)={center_of_mass.asArray()}")
 
         # cm -> m
-        occs_dict['center_of_mass'] = [_/self.scale for _ in center_of_mass.asArray()]
+        origin = self.link_origins[self.links_by_token[oc.entityToken]]
+        occs_dict['center_of_mass'] = [(c-o)/self.scale for c, o in zip(center_of_mass.asArray(), origin)]
 
         moments = prop.getXYZMomentsOfInertia()
         if not moments[0]:
@@ -481,7 +482,7 @@ class Configurator:
         fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
 
         link = parts.Link(name = inertia['name'],
-                        xyz = (f-u/ self.scale for f,u in zip(fusion_origin, urdf_origin)),
+                        xyz = ((f-u)/ self.scale for f,u in zip(fusion_origin, urdf_origin)),
                         center_of_mass = inertia['center_of_mass'],
                         sub_folder = self.mesh_folder,
                         mass = inertia['mass'],
@@ -610,7 +611,7 @@ class Configurator:
 
                     self.link_origins[child_name] = child_origin
                     
-                    xyz = [c-p/self.scale for c,p in zip(child_origin, parent_origin.asArray())]
+                    xyz = [(c-p)/self.scale for c,p in zip(child_origin, parent_origin.asArray())]
 
                     self.joints[joint['name']] = parts.Joint(name=joint['name'] , joint_type=joint['type'], 
                                         xyz=xyz, axis=joint['axis'], 
