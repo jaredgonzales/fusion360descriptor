@@ -479,10 +479,11 @@ class Configurator:
     def __add_link(self, occ: adsk.fusion.Occurrence):
         inertia = self._get_inertia(occ)
         urdf_origin = self.link_origins[inertia['name']]
-        fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
+        #fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
 
         link = parts.Link(name = inertia['name'],
-                        xyz = ((f-u)/ self.scale for f,u in zip(fusion_origin, urdf_origin)),
+                        #xyz = ((f-u)/ self.scale for f,u in zip(fusion_origin, urdf_origin)),
+                        xyz = (-u for u in urdf_origin),
                         center_of_mass = inertia['center_of_mass'],
                         sub_folder = self.mesh_folder,
                         mass = inertia['mass'],
