@@ -483,12 +483,10 @@ class Configurator:
                       f"child {occ_name} {occ.transform2.getAsCoordinateSystem()[0].asArray()}")
                 self.joints_dict[rigid_group_occ_name] = joint_dict
 
-    def __add_link(self, occ: adsk.fusion.Occurrence, shift: Optional[List[float]]):
+    def __add_link(self, occ: adsk.fusion.Occurrence):
         inertia = self._get_inertia(occ)
         urdf_origin = self.link_origins[inertia['name']]
         #fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
-        if shift:
-            urdf_origin = [u-s for u, s in zip(urdf_origin, shift])
 
         link = parts.Link(name = inertia['name'],
                         xyz = (-u/self.scale  for u in urdf_origin),
@@ -587,7 +585,7 @@ class Configurator:
         grounded_occ = {"base_link"}
         # URDF origin at base link origin "by definition"
         self.link_origins["base_link"] = self.base_link.transform2.getAsCoordinateSystem()[0].asArray()
-        self.__add_link(self.base_link, shift = self.link_origins["base_link"])
+        self.__add_link(self.base_link)
         boundary = grounded_occ
         while boundary:
             new_boundary = set()
