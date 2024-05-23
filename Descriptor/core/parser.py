@@ -449,6 +449,11 @@ class Configurator:
                 raise ValueError(f'Order {self.joint_order} not supported')
 
             self.joints_dict[joint.name] = joint_dict
+            print(f"Got from Fusion: {joint_dict['type']} {joint.name} connecting",
+                  f"{occ_one_name} @ {occ_one.transform2.getAsCoordinateSystem()[0].asArray()} and",
+                  f"{occ_two_name} @ {occ_two.transform2.getAsCoordinateSystem()[0].asArray()}", sep="\n\t")
+            print("\tOrigin 1:", geom_one_origin.asArray() if geom_one_origin is not None else None)
+            print("\tOrigin 2:", geom_two_origin.asArray() if geom_two_origin is not None else None)
 
         # Add RigidGroups as fixed joints
         for group in self.root.allRigidGroups:
@@ -473,13 +478,10 @@ class Configurator:
                 occ_name = self.get_name(occ)
                 joint_dict['parent'] = parent_occ_name
                 joint_dict['child'] = occ_name
-                print(f"Fixed joint from rigid group {rigid_group_occ_name}, parent={parent_occ_name}, child={occ_name}")
+                print(f"Got from Fusion: {rigid_group_occ_name}, connecting",
+                      f"parent {parent_occ_name} @ {parent_occ.transform2.getAsCoordinateSystem()[0].asArray()} and"
+                      f"child {occ_name} {occ.transform2.getAsCoordinateSystem()[0].asArray()}")
                 self.joints_dict[rigid_group_occ_name] = joint_dict
-
-        # Sanity check
-        for component in self._iterate_through_occurrences():
-            if component.isLightBulbOn and not component.entityToken in self.links_by_token:
-                raise RuntimeError(f"Component {component.name} is unreacheable from ground component via joints+links")
 
     def __add_link(self, occ: adsk.fusion.Occurrence):
         inertia = self._get_inertia(occ)
@@ -631,3 +633,20 @@ class Configurator:
 
             grounded_occ.update(new_boundary)
             boundary = new_boundary
+
+        # Sanity check
+        not_in_joints = set()
+        unreachable = set()
+        for component in self._iterate_through_occurrences():
+            if component.isLightBulbOn and self.body_dict.get(self.name) is not None:
+                if component.entityToken not in self.links_by_token:
+                    not_in_joints.add(component.name)
+                elif self.links_by_token[component.entityToken] not in grounded_occ:
+                    unreachable.add(component.name)
+        if not_in_joints or unreachable:
+            error = "Not all components were included in the export:"
+            if not_in_joints:
+                error += "Not a part of any joint or rigid group: " + ", ".join(not_in_joints) + "."
+            if unreachable:
+                error += "Unreacheable from the grounded component via joints+links: " + ", ".join(unreachable) + "."
+            raise RuntimeError(error)
