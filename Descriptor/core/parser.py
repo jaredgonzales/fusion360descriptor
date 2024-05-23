@@ -483,13 +483,15 @@ class Configurator:
                       f"child {occ_name} {occ.transform2.getAsCoordinateSystem()[0].asArray()}")
                 self.joints_dict[rigid_group_occ_name] = joint_dict
 
-    def __add_link(self, occ: adsk.fusion.Occurrence):
+    def __add_link(self, occ: adsk.fusion.Occurrence, shift: Optional[List[float]]):
         inertia = self._get_inertia(occ)
         urdf_origin = self.link_origins[inertia['name']]
         #fusion_origin = occ.transform2.getAsCoordinateSystem()[0].asArray()
+        if shift:
+            urdf_origin = [u-s for u, s in zip(urdf_origin, shift])
 
         link = parts.Link(name = inertia['name'],
-                        xyz = (-(u+o)/self.scale  for u, o in zip(urdf_origin, self.base_link_origin)),
+                        xyz = (-u/self.scale  for u in urdf_origin),
                         center_of_mass = inertia['center_of_mass'],
                         sub_folder = self.mesh_folder,
                         mass = inertia['mass'],
@@ -583,10 +585,9 @@ class Configurator:
             occurrences[joint_dict["parent"]].append(joint_name)
             occurrences[joint_dict["child"]].append(joint_name)
         grounded_occ = {"base_link"}
-        self.base_link_origin = self.base_link.transform2.getAsCoordinateSystem()[0].asArray()
-        # We place URDF origin at base link origin rather than at Fusion global origin
-        self.link_origins["base_link"] = (0, 0, 0)
-        self.__add_link(self.base_link)
+        # URDF origin at base link origin "by definition"
+        self.link_origins["base_link"] = self.base_link.transform2.getAsCoordinateSystem()[0].asArray()
+        self.__add_link(self.base_link, shift = self.link_origins["base_link"])
         boundary = grounded_occ
         while boundary:
             new_boundary = set()
