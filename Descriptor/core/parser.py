@@ -25,6 +25,8 @@ class JointInfo:
 class Hierarchy:
     ''' hierarchy of the design space '''
 
+    total_components = 0
+
     def __init__(self, component) -> None:
         ''' Initialize Hierarchy class to parse document and define component relationships.
         Uses a recursive traversal (based off of fusion example) and provides helper functions
@@ -38,7 +40,10 @@ class Hierarchy:
         self.children: List["Hierarchy"] = []
         self.component: adsk.fusion.Occurrence = component
         self.name: str = component.name
-        self._parent: Optional["Hierarchy"] = None
+        self.parent: Optional["Hierarchy"] = None
+        Hierarchy.total_components += 1
+        if Hierarchy.total_components % 20 == 0:
+            utils.log(f"... Collected {self.total_components} components ...")
 
     def _add_child(self, c: "Hierarchy") -> None:
         self.children.append(c)
@@ -128,16 +133,6 @@ class Hierarchy:
             child_stack.add(tmp.parent)
 
         return parent_map
-            
-    @property
-    def parent(self):
-        if self._parent is None:
-            return None
-        return self._parent
-
-    @parent.setter
-    def parent(self,v):
-        self._parent = v
 
     @staticmethod
     def traverse(occurrences, parent: Optional["Hierarchy"] = None) -> "Hierarchy":
@@ -278,9 +273,9 @@ class Configurator:
 
         utils.log("* Traversing the hierarchy *")
         Hierarchy.traverse(occ_list, self.root_node)
-        utils.log("* Collecting components *")
+        utils.log(f"* Collected {Hierarchy.total_components} components, processing *")
         self.component_map = self.root_node.get_all_children()
-        utils.log("* Collecting sub-bodies *")
+        utils.log("* Processing sub-bodies *")
         self.get_sub_bodies()
 
         return self.component_map
