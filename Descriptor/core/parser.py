@@ -205,8 +205,16 @@ def getMatrixFromRoot(occ: Optional[adsk.fusion.Occurrence]) -> adsk.core.Matrix
 
 class Configurator:
 
-    joint_type_list = [ 'fixed', 'revolute', 'prismatic', 'Cylinderical',
-                        'PinSlot', 'Planner', 'Ball']  # these are the names in urdf
+    # Map to URDF type
+    joint_types: Dict[adsk.fusion.JointTypes, str] = {
+        adsk.fusion.JointTypes.RigidJointType: "fixed",
+        adsk.fusion.JointTypes.RevoluteJointType: "revolute",
+        adsk.fusion.JointTypes.SliderJointType: "prismatic",
+        adsk.fusion.JointTypes.CylindricalJointType: "Cylindrical_unsupported",
+        adsk.fusion.JointTypes.PinSlotJointType: "PinSlot_unsupported",
+        adsk.fusion.JointTypes.PlanarJointType: "planar",
+        adsk.fusion.JointTypes.BallJointType: "Ball_unsupported",
+    }
 
     def __init__(self, root, scale: float, cm: float, name: str) -> None:
         ''' Initializes Configurator class to handle building hierarchy and parsing
@@ -418,9 +426,7 @@ class Configurator:
             orig_name = joint.name
             # Rename if the joint already exists in our dictionary
             try:
-                token = joint.entityToken
-
-                joint_type = Configurator.joint_type_list[cast(int, joint.jointMotion.jointType)]
+                joint_type = Configurator.joint_types[joint.jointMotion.jointType]
 
                 occ_one = joint.occurrenceOne
                 occ_two = joint.occurrenceTwo
