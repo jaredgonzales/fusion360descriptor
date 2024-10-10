@@ -127,7 +127,7 @@ class Manager:
         assert Manager.root is not None
         assert Manager.design is not None
 
-        start = time.time()
+        utils.start_log_timer()
         if self._app is not None and self._app.activeViewport is not None:
             utils.viewport = self._app.activeViewport
         utils.log("*** Parsing ***")
@@ -160,5 +160,5 @@ class Manager:
         if self.save_mesh:
             utils.log("*** Generating mesh STLs ***")
             io.visible_to_stl(Manager.design, self.save_dir, Manager.root, self.mesh_accuracy, config.body_dict, self.sub_mesh, config.body_mapper, config.links_by_token, Manager._app)
-        utils.log(f"*** Done! Time elapsed: {time.time() - start:.1f}s ***")
+        utils.log(f"*** Done! Time elapsed: {utils.time_elapsed():.1f}s ***")
 
