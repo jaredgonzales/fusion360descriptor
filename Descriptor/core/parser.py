@@ -3,7 +3,7 @@ module to parse fusion file
 '''
 
 import math
-from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union, cast
+from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Set, Tuple, Union, cast
 from dataclasses import dataclass, field
 
 import adsk.core, adsk.fusion
@@ -250,6 +250,7 @@ class Configurator:
         self.eps = 1e-7 / self.scale
         self.base_link: Optional[adsk.fusion.Occurrence] = None
         self.component_map: Dict[str, Hierarchy] = OrderedDict() # Entity tokens for each component
+        self.bodies_collected: Set[str] = set() # For later sanity checking - all bodies passed to URDF
         self.name_map = name_map
         self.merge_links = merge_links
 
@@ -406,7 +407,7 @@ class Configurator:
 
         return occs_dict
 
-    def _iterate_through_occurrences(self):
+    def _iterate_through_occurrences(self) -> Iterable[adsk.fusion.Occurrence]:
         for token in self.component_map.values():
             yield token.component
 
@@ -529,7 +530,6 @@ class Configurator:
         # Add RigidGroups as fixed joints
         for group in sorted(self.root.allRigidGroups, key=lambda group: group.name):
             original_group_name = group.name
-            utils.log(f"DEBUG: Processing rigid group {original_group_name}")
             try:
                 if group.isSuppressed:
                     utils.log(f"WARNING: Skipping suppressed rigid group {original_group_name} (child of {group.parentComponent.name})")
@@ -540,6 +540,7 @@ class Configurator:
             except RuntimeError as e:
                 utils.log(f"WARNING: skipping invalid rigid group {original_group_name}: (child of {group.parentComponent.name}) {e}")
                 continue
+            utils.log(f"DEBUG: Processing rigid group {original_group_name}: {[(occ.name if occ else None) for occ in group.occurrences]}")
             parent_occ: Optional[adsk.fusion.Occurrence] = None
             for occ in group.occurrences:
                 if occ is None:
@@ -626,6 +627,8 @@ class Configurator:
         else:
             inertia_tensor = list(inertia_tensor)
             center_of_mass = list(center_of_mass/mass)
+
+        self.bodies_collected.update(body.entityToken for body, _ in self.body_dict[name])
 
         self.links[name] = parts.Link(name = utils.format_name(name),
                         xyz = (u * self.cm for u in inv.translation.asArray()),
@@ -794,18 +797,21 @@ class Configurator:
         # Sanity checks
         not_in_joints = set()
         unreachable = set()
-        for component in self._iterate_through_occurrences():
-            if component.isVisible and self.body_dict.get(self.name) is not None:
-                if component.entityToken not in self.links_by_token:
-                    not_in_joints.add(component.name)
-                elif self.links_by_token[component.entityToken] not in grounded_occ:
-                    unreachable.add(component.name)
+        for occ in self._iterate_through_occurrences():
+            if occ.isVisible and self.body_dict.get(self.name) is not None:
+                if occ.entityToken not in self.links_by_token:
+                    not_in_joints.add(occ.name)
+                elif self.links_by_token[occ.entityToken] not in grounded_occ:
+                    unreachable.add(occ.name)
+        for occ in self.root.allOccurrences:
+            if any (b.isVisible and not b.entityToken in self.bodies_collected for b in occ.bRepBodies):
+                unreachable.add(occ.name)
         if not_in_joints or unreachable:
-            error = "FATAL ERROR: Not all components were included in the export:"
+            error = "FATAL ERROR: Not all occurrences were included in the export:"
             if not_in_joints:
                 error += "Not a part of any joint or rigid group: " + ", ".join(not_in_joints) + "."
             if unreachable:
-                error += "Unreacheable from the grounded component via joints+links: " + ", ".join(unreachable) + "."
+                error += "Unreacheable from the grounded occurrence via joints+links: " + ", ".join(unreachable) + "."
             utils.log(error)
         missing_joints = set(self.joints_dict).difference(self.joints)
         for joint_name in missing_joints.copy():
