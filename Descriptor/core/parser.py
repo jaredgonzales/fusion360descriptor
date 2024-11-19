@@ -44,7 +44,8 @@ class Hierarchy:
         self.name: str = component.name
         self.parent: Optional["Hierarchy"] = None
         Hierarchy.total_components += 1
-        utils.log(f"... {Hierarchy.total_components}. Collected {self.name}...")
+        if utils.LOG_DEBUG:
+            utils.log(f"... {Hierarchy.total_components}. Collected {self.name}...")
 
     def _add_child(self, c: "Hierarchy") -> None:
         self.children.append(c)
@@ -455,7 +456,8 @@ class Configurator:
                 continue
 
             name = utils.rename_if_duplicate(self.name_map.get(joint.name, joint.name), self.joints_dict)
-            utils.log(f"Processing joint {orig_name}->{name} of type {joint_type}, between {occ_one.name} and {occ_two.name}")
+            if utils.LOG_DEBUG:
+                utils.log(f"... Processing joint {orig_name}->{name} of type {joint_type}, between {occ_one.name} and {occ_two.name}")
 
             parent = self.get_name(occ_one)
             child = self.get_name(occ_two)
@@ -744,7 +746,7 @@ class Configurator:
                     axis = joint.axis
                     
                     if joint.type != "fixed":
-                        utils.log(f"DEBUG: for non-fixed joint {joint.name}, updating child origin from {child_origin.translation.asArray()} to {joint.origin.asArray()}")
+                        utils.log(f"DEBUG: for non-fixed joint {joint.name}, updating child origin from {ct_to_str(child_origin)} to {joint.origin.asArray()}")
                         child_origin = child_origin.copy()
                         child_origin.translation = joint.origin
                         # The joint axis is specified in the joint (==child) frame
@@ -753,7 +755,7 @@ class Configurator:
                         assert tt.invert()
                         axis = axis.copy()
                         assert axis.transformBy(tt)
-                        utils.log(f"DEBUG:    and updating axis from {joint.axis.asArray()} to {axis.asArray()}")
+                        utils.log(f"DEBUG:    and using {ct_to_str(tt)} to update axis from {joint.axis.asArray()} to {axis.asArray()}")
 
                     for name in [child_name] + child_link_names:
                         self.link_origins[name] = child_origin
