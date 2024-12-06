@@ -136,9 +136,9 @@ class Writer:
             }
             self.write_xacro(file_name, links, joints)
             file_name_full = os.path.join(self.save_dir, f"{self.config.name}-full.xacro")
-            self.write_xacro(file_name_full, self.config.links, {})
+            self.write_xacro(file_name_full, {link: self.config.links[link] for link in self.config.extra_links}, {})
         else:
-            self.write_xacro(file_name, {link: self.config.links[link] for link in self.config.extra_links}, self.config.joints)
+            self.write_xacro(file_name, self.config.links, self.config.joints)
 
         material_file_name = os.path.join(self.save_dir, f"materials.xacro")
         self.write_materials_xacro(material_file_name)
