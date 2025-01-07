@@ -57,7 +57,7 @@ class Hierarchy:
     def get_all_children(self) -> Dict[str, "Hierarchy"]:
         ''' get all children and sub children of this instance '''
 
-        child_map = {}
+        child_map = OrderedDict()
         parent_stack: Set["Hierarchy"] = set()
         parent_stack.update(self.get_children())
         while parent_stack:
@@ -215,7 +215,6 @@ class Configurator:
         # Export top-level occurrences
         self.root = root
         self.occ = root.occurrences.asList
-        self.inertial_dict = {}
         self.inertia_accuracy = adsk.fusion.CalculationAccuracy.LowCalculationAccuracy
 
         self.sub_mesh = False
@@ -622,8 +621,8 @@ class Configurator:
         return candidates[0]
 
     def _links(self):
-        self.merged_links_by_link: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = {}
-        self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = {}
+        self.merged_links_by_link: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
+        self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
 
         for name, names in self.merge_links.items():
             if not names:
@@ -649,7 +648,7 @@ class Configurator:
                     utils.fatal(f"Invalid MergeLinks YAML config setting: {link_name} is included in two merged links: '{name}' and '{self.merged_links_by_link[link_name][0]}'")
                 self.merged_links_by_link[link_name] = val
 
-        body_names: Dict[str, Tuple[()]] = {}
+        body_names: Dict[str, Tuple[()]] = OrderedDict()
         
         renames = set(self.name_map)
 
