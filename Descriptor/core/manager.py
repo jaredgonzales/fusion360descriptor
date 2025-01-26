@@ -207,7 +207,7 @@ class Manager:
         with open(os.path.join(self.urdf_dir, "fusion2urdf.txt"), "wt") as f:
             git_info = self.get_git_info()
             if git_info:
-                git_info = "\n\tusing {git_info}"
+                git_info = f"\n\tusing {git_info}"
             f.write(f"URDF structure created from Fusion Model {Manager.root.name}{git_info}:\n")
             for s in config.tree_str:
                 f.write(s)
