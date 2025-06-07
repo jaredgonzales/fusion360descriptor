@@ -96,7 +96,7 @@ class Manager:
                 raise(ValueError(f"Malformed config '{config_file}': top level should be a dictionary"))
             wrong_keys = set(configuration).difference([
                 "RobotName", "SaveMesh", "SubMesh", "MeshResolution", "InertiaPrecision",
-                "TargetUnits", "TargetPlatform", "NameMap", "MergeLinks",
+                "TargetUnits", "TargetPlatform", "NameMap", "MergeLinks", "RigidLinks",
                 "Locations", "Extras", "Root",
             ])
             if wrong_keys:
@@ -107,6 +107,9 @@ class Manager:
             self.merge_links = configuration.get("MergeLinks", {})
             if self.merge_links is None:
                 self.merge_links = {}
+            self.rigid_links = configuration.get("RigidLinks", {})
+            if self.rigid_links is None:
+                self.rigid_links = {}
             self.extra_links = configuration.get("Extras", [])
             if self.extra_links is None:
                 self.extra_links = []
@@ -143,7 +146,7 @@ class Manager:
         '''        
         assert Manager.root is not None
 
-        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.locations, self.extra_links, self.root_name)
+        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name)
         config.inertia_accuracy = self.inert_accuracy
         ## Return array of tuples (parent, child)
         config.get_scene_configuration()
@@ -192,7 +195,7 @@ class Manager:
         if self._app is not None and self._app.activeViewport is not None:
             utils.viewport = self._app.activeViewport
         utils.log("*** Parsing ***")
-        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.locations, self.extra_links, self.root_name)
+        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name)
         config.inertia_accuracy = self.inert_accuracy
         config.sub_mesh = self.sub_mesh
         utils.log("** Getting scene configuration **")

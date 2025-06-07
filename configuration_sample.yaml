@@ -42,6 +42,12 @@ MergeLinks:
     AddOnComponent1:
         - Slider Assembly v*+*+AddOn v*
 
+# Merge a rigid group into a single URDF link. Similar to MergeLinks,
+# but all occurrences connected to the specified occurrence of assembly via
+# rigid group or rigid link would become a single URDF link
+RigidLinks:
+    AddOnComponent12: Slider Assembly v*+*+AddOn2 v*
+
 # Use this to specify parts of the Design that should be exported, but not included in the
 # main urdf/<robot_name>.xacro. If present, that these links and the joints that connect
 # them to the rest of the robot would not be included in urdf/<robot_name>.xacro, and

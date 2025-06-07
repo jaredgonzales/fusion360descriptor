@@ -181,7 +181,10 @@ class Configurator:
         adsk.fusion.JointTypes.BallJointType: "Ball_unsupported",
     }
 
-    def __init__(self, root: adsk.fusion.Component, scale: float, cm: float, name: str, name_map: Dict[str, str], merge_links: Dict[str, List[str]], locations: Dict[str, Dict[str, str]], extra_links: Sequence[str], root_name: Optional[str]) -> None:
+    def __init__(self, root: adsk.fusion.Component, scale: float, cm: float, name: str, 
+                 name_map: Dict[str, str], merge_links: Dict[str, List[str]], 
+                 rigid_links: Dict[str, str], locations: Dict[str, Dict[str, str]], 
+                 extra_links: Sequence[str], root_name: Optional[str]) -> None:
         ''' Initializes Configurator class to handle building hierarchy and parsing
         Parameters
         ----------
@@ -212,6 +215,7 @@ class Configurator:
         self.bodies_collected: Set[str] = set() # For later sanity checking - all bodies passed to URDF
         self.name_map = name_map
         self.merge_links = merge_links
+        self.rigid_links = rigid_links
         self.locations = locations
         self.extra_links = extra_links
 
@@ -304,24 +308,22 @@ class Configurator:
         self._build()
 
     def _base(self):
-        ''' Get the base link '''
-        if self.root_name is not None and self.root_name in self.merge_links:
-            self.base_link = self._resolve_name(self.merge_links[self.root_name][0])
+        ''' find the base link '''
+        if self.root_name is not None:
+            if self.root_name is not None and self.root_name in self.merge_links:
+                self.base_link = self._resolve_name(self.merge_links[self.root_name][0])
+            elif self.root_name in self.rigid_links:
+                self.base_link = self._resolve_name(self.rigid_links[self.root_name])
+            else:
+                self.base_link = self._resolve_name(self.root_name)
         else:
             for oc in self._iterate_through_occurrences():
                 # Get only the first grounded link
-                if (
-                    (self.root_name is None and oc.isGrounded) or
-                    (self.root_name is not None and self.root_name == oc.name)
-                ):
-                    # We must store this object because we cannot occurrences
+                if oc.isGrounded:
                     self.base_link = oc
                     break
             if self.base_link is None:
-                if self.root_name is None:
-                    utils.fatal("Failed to find a grounded occurrence for URDF root. Make one of the Fusion occurrences grounded or specify 'Root: name' in the configuration file")
-                else:
-                    utils.fatal(f"Occurrence '{self.root_name}' specified in the 'Root:' section of the configuration file not found in the design")
+                utils.fatal("Failed to find a grounded occurrence for URDF root. Make one of the Fusion occurrences grounded or specify 'Root: name' in the configuration file")
         self.get_name(self.base_link)
 
     def get_name(self, oc: adsk.fusion.Occurrence) -> str:
@@ -624,7 +626,50 @@ class Configurator:
     def _links(self):
         self.merged_links_by_link: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
         self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
+        
+        # Build adjacency list from fixed joints
+        rigid_graph: Dict[str, Set[str]] = defaultdict(set)
+        
+        if self.rigid_links:
+            for joint_info in self.joints_dict.values():
+                if joint_info.type == "fixed":
+                    parent = joint_info.parent
+                    child = joint_info.child
+                        
+                    rigid_graph[parent].add(child)
+                    rigid_graph[child].add(parent)
 
+            # Process RigidLinks first
+            for name, pattern in self.rigid_links.items():
+                # Resolve the starting occurrence
+                start_occ = self._resolve_name(pattern)
+                start_name = self.get_name(start_occ)
+                
+                # BFS to find all connected components
+                visited: Set[str] = set()
+                queue: Set[str] = set([start_name])
+
+                while queue:
+                    current = queue.pop()
+                    visited.add(current)
+                    queue.update(rigid_graph[current].difference(visited))
+            
+                connected_names = sorted(visited)
+                
+                # Validate no overlap with other merged links
+                for link_name in connected_names:
+                    if link_name in self.merged_links_by_link:
+                        utils.fatal(f"Invalid RigidLinks YAML config setting: {link_name} is included in both "
+                                f"rigid links '{name}' and '{self.merged_links_by_link[link_name][0]}'")
+                
+                # Store the rigid link
+                val = name, connected_names, [self.links_by_name[n] for n in connected_names]
+                utils.log(f"Rigid link {name} <- occurrences {connected_names}")
+                self.merged_links_by_name[name] = val
+                for link_name in connected_names:
+                    self.merged_links_by_link[link_name] = val
+        
+        # Continue with existing MergeLinks processing...
         for name, names in self.merge_links.items():
             if not names:
                 utils.fatal(f"Invalid MergeLinks YAML config setting: merged link '{name}' is empty, which is not allowed")
@@ -646,7 +691,7 @@ class Configurator:
             self.merged_links_by_name[name] = val
             for link_name in link_names:
                 if link_name in self.merged_links_by_link:
-                    utils.fatal(f"Invalid MergeLinks YAML config setting: {link_name} is included in two merged links: '{name}' and '{self.merged_links_by_link[link_name][0]}'")
+                    utils.fatal(f"Invalid MergeLinks YAML config setting: {link_name} is included in two merged/rigid links: '{name}' and '{self.merged_links_by_link[link_name][0]}'")
                 self.merged_links_by_link[link_name] = val
 
         body_names: Dict[str, Tuple[()]] = OrderedDict()
@@ -893,7 +938,11 @@ class Configurator:
             joint_children[joint.parent].append(joint)
         tree_str = []
         def get_tree(level: int, link_name: str, exclude: Set[str]):
-            extra = f" {self.merge_links[link_name]}" if link_name in self.merge_links else ""
+            extra = ""
+            if link_name in self.merge_links:
+                f" Merged from: {self.merge_links[link_name]}"
+            elif link_name in self.rigid_links:
+                f" Rigid connected to {self.rigid_links[link_name]}: {', '.join(self.merged_links_by_name[link_name][1])}"
             tree_str.append("   "*level + f" - Link: {link_name}{extra}")
             for j in joint_children.get(link_name, ()):
                 if j.child not in exclude:
