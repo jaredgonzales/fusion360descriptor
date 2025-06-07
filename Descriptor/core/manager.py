@@ -87,6 +87,7 @@ class Manager:
         self.name_map: Dict[str, str] = {}
         self.merge_links: Dict[str, List[str]] = {}
         self.extra_links: List[str] = []
+        self.ignore_links: List[str] = []
         self.locations: Dict[str, Dict[str,str]] = {}
         self.root_name: Optional[str] = None
         if config_file:
@@ -97,7 +98,7 @@ class Manager:
             wrong_keys = set(configuration).difference([
                 "RobotName", "SaveMesh", "SubMesh", "MeshResolution", "InertiaPrecision",
                 "TargetUnits", "TargetPlatform", "NameMap", "MergeLinks", "RigidLinks",
-                "Locations", "Extras", "Root",
+                "Locations", "Extras", "Root", "Ignore",
             ])
             if wrong_keys:
                 raise(ValueError(f"Malformed config '{config_file}': unexpected top-level keys: {list(wrong_keys)}"))
@@ -113,6 +114,9 @@ class Manager:
             self.extra_links = configuration.get("Extras", [])
             if self.extra_links is None:
                 self.extra_links = []
+            self.ignore_links = configuration.get("Ignore", [])
+            if self.ignore_links is None:
+                self.ignore_links = []
             self.locations = configuration.get("Locations", {})
             if self.locations is None:
                 self.locations = {}
@@ -146,7 +150,7 @@ class Manager:
         '''        
         assert Manager.root is not None
 
-        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name)
+        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name, self.ignore_links)
         config.inertia_accuracy = self.inert_accuracy
         ## Return array of tuples (parent, child)
         config.get_scene_configuration()
@@ -195,7 +199,7 @@ class Manager:
         if self._app is not None and self._app.activeViewport is not None:
             utils.viewport = self._app.activeViewport
         utils.log("*** Parsing ***")
-        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name)
+        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.name_map, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name, self.ignore_links)
         config.inertia_accuracy = self.inert_accuracy
         config.sub_mesh = self.sub_mesh
         utils.log("** Getting scene configuration **")

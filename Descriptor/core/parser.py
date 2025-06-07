@@ -184,7 +184,7 @@ class Configurator:
     def __init__(self, root: adsk.fusion.Component, scale: float, cm: float, name: str, 
                  name_map: Dict[str, str], merge_links: Dict[str, List[str]], 
                  rigid_links: Dict[str, str], locations: Dict[str, Dict[str, str]], 
-                 extra_links: Sequence[str], root_name: Optional[str]) -> None:
+                 extra_links: Sequence[str], root_name: Optional[str], ignore_links: Sequence[str]) -> None:
         ''' Initializes Configurator class to handle building hierarchy and parsing
         Parameters
         ----------
@@ -218,8 +218,8 @@ class Configurator:
         self.rigid_links = rigid_links
         self.locations = locations
         self.extra_links = extra_links
-
-        self.root_node: Optional[Hierarchy] = None
+        self.ignore_links_patterns = ignore_links  # Store the original patterns
+        self.ignore_links: Set[str] = set()  # Will store resolved occurrence names
         self.root_name = root_name
 
         self.name = name
@@ -664,7 +664,7 @@ class Configurator:
                 
                 # Store the rigid link
                 val = name, connected_names, [self.links_by_name[n] for n in connected_names]
-                utils.log(f"Rigid link {name} <- occurrences {connected_names}")
+                utils.log(f"DEBUG: Rigid link {name} <- occurrences {connected_names}")
                 self.merged_links_by_name[name] = val
                 for link_name in connected_names:
                     self.merged_links_by_link[link_name] = val
@@ -687,7 +687,7 @@ class Configurator:
                 utils.fatal(f"Invalid MergeLinks YAML config setting: merged '{name}' clashes with existing Fusion link '{self.links_by_name[name].fullPathName}'; add the latter to NameMap in YAML to avoid the name clash")
             link_names = list(OrderedDict.fromkeys(link_names)) # Remove duplicates
             val = name, link_names, [self.links_by_name[n] for n in link_names]
-            utils.log(f"Merged link {name} <- occurrences {link_names}")
+            utils.log(f"DEBUG: Merged link {name} <- occurrences {link_names}")
             self.merged_links_by_name[name] = val
             for link_name in link_names:
                 if link_name in self.merged_links_by_link:
@@ -819,6 +819,21 @@ class Configurator:
         # Location and XYZ of the URDF link origin w.r.t Fusion global frame in Fusion units
         self.link_origins: Dict[str, adsk.core.Matrix3D] = {}
 
+        # First resolve all ignore patterns to get the actual occurrences to ignore
+        for pattern in self.ignore_links_patterns:
+            try:
+                occ = self._resolve_name(pattern)
+                # Add the occurrence itself
+                if occ.entityToken in self.links_by_token:
+                    self.ignore_links.add(self.links_by_token[occ.entityToken])
+                # If it's an assembly, add all occurrences within it
+                if occ.entityToken in self.assembly_tokens:
+                    for child in occ.childOccurrences:
+                        if child.entityToken in self.links_by_token:
+                            self.ignore_links.add(self.links_by_token[child.entityToken])
+            except Exception as e:
+                utils.log(f"WARNING: Failed to resolve ignore pattern '{pattern}': {e}")
+
         occurrences: Dict[str, List[str]] = OrderedDict()
         for joint_name, joint_info in self.joints_dict.items():
             occurrences.setdefault(joint_info.parent, [])
@@ -940,9 +955,9 @@ class Configurator:
         def get_tree(level: int, link_name: str, exclude: Set[str]):
             extra = ""
             if link_name in self.merge_links:
-                f" Merged from: {self.merge_links[link_name]}"
+                extra = f" [Merged from: {self.merge_links[link_name]}]"
             elif link_name in self.rigid_links:
-                f" Rigid connected to {self.rigid_links[link_name]}: {', '.join(self.merged_links_by_name[link_name][1])}"
+                extra = f" [Rigid connected to {self.rigid_links[link_name]}: {', '.join(self.merged_links_by_name[link_name][1])}]"
             tree_str.append("   "*level + f" - Link: {link_name}{extra}")
             for j in joint_children.get(link_name, ()):
                 if j.child not in exclude:
@@ -962,8 +977,14 @@ class Configurator:
                 if occ.fullPathName not in self.links_by_token:
                     not_in_joints.add(occ.fullPathName)
                 elif self.links_by_token[occ.fullPathName] not in grounded_occ:
+                    # Skip if the link is in the ignore list
+                    if self.links_by_token[occ.fullPathName] in self.ignore_links:
+                        continue
                     unreachable.add(occ.fullPathName)
         for occ in self.root.allOccurrences:
+            # Skip if the link is in the ignore list
+            if occ.entityToken in self.links_by_token and self.links_by_token[occ.entityToken] in self.ignore_links:
+                continue
             if any (b.isVisible and not b.entityToken in self.bodies_collected for b in occ.bRepBodies):
                 unreachable.add(occ.fullPathName)
         if not_in_joints or unreachable:
@@ -976,7 +997,10 @@ class Configurator:
         missing_joints = set(self.joints_dict).difference(self.joints)
         for joint_name in missing_joints.copy():
             joint = self.joints_dict[joint_name]
-            if joint.type == "fixed":
+            if joint.parent in self.ignore_links or joint.child in self.ignore_links:
+                utils.log(f"DEBUG: Skipped Joint '{joint_name}' as one of its endpoints ({joint.parent} or {joint.child}) is in the ignore list")
+                missing_joints.remove(joint_name)
+            elif joint.type == "fixed":
                 parent_name, _, _ = self._get_merge(self.links_by_name[joint.parent])
                 child_name, _, _ = self._get_merge(self.links_by_name[joint.child])
                 if parent_name == child_name:

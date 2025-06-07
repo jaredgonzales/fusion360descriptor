@@ -66,3 +66,20 @@ Locations:
     AddOnComponent1:
         Base: Slider Assembly v*+*+AddOn v*+Base*
         Tip: Slider Assembly v*+*+AddOn v*+Tip*
+
+# Use this to specify parts of the Design that should be completely ignored during export.
+# Links listed here will:
+# - Not be included in the URDF export
+# - Not cause errors about missing joints if they have joints connected to them
+# - Not cause errors about unreachable links
+# - Not be included in the extras section
+# This is useful for parts that are only used for visualization or reference in Fusion,
+# but should not be part of the robot model.
+# The name of occurrences/assemblies can be specified using the same patterns as in MergeLinks:
+# - Literal name
+# - Occurrence name pattern with exactly one wildcard symbol "*" (wildcard matches any substring)
+# - as a +-deliminated full path suffix, each element potentially containing a single wildcard
+Ignore:
+    - Reference_Object v*
+    - Visualization_Helper v*+*+Helper v*
+    - Temporary_Assembly v*
