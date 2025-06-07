@@ -221,6 +221,7 @@ class Configurator:
         self.ignore_links_patterns = ignore_links  # Store the original patterns
         self.ignore_links: Set[str] = set()  # Will store resolved occurrence names
         self.root_name = root_name
+        self.standalone_link_paths: Dict[str, str] = {}
 
         self.name = name
         self.mesh_folder = f'{name}/meshes/'
@@ -652,7 +653,12 @@ class Configurator:
                 while queue:
                     current = queue.pop()
                     visited.add(current)
-                    queue.update(rigid_graph[current].difference(visited))
+                    new_occs = rigid_graph[current]
+                    occ = self.links_by_name[current]
+                    if occ.entityToken in self.assembly_tokens:
+                        for child in occ.childOccurrences:
+                            new_occs.add(self.get_name(child))
+                    queue.update(new_occs.difference(visited))
             
                 connected_names = sorted(visited)
                 
@@ -810,6 +816,7 @@ class Configurator:
         name = self.get_name(occ)
         if name in self.merged_links_by_link:
             return self.merged_links_by_link[name]
+        self.standalone_link_paths[name] = occ.fullPathName
         return name, [name], [occ]
 
     def _build(self) -> None:
@@ -821,18 +828,17 @@ class Configurator:
 
         # First resolve all ignore patterns to get the actual occurrences to ignore
         for pattern in self.ignore_links_patterns:
-            try:
-                occ = self._resolve_name(pattern)
-                # Add the occurrence itself
-                if occ.entityToken in self.links_by_token:
-                    self.ignore_links.add(self.links_by_token[occ.entityToken])
-                # If it's an assembly, add all occurrences within it
-                if occ.entityToken in self.assembly_tokens:
-                    for child in occ.childOccurrences:
-                        if child.entityToken in self.links_by_token:
-                            self.ignore_links.add(self.links_by_token[child.entityToken])
-            except Exception as e:
-                utils.log(f"WARNING: Failed to resolve ignore pattern '{pattern}': {e}")
+            occ = self._resolve_name(pattern)
+            # Add the occurrence itself
+            if occ.entityToken in self.links_by_token:
+                self.ignore_links.add(self.links_by_token[occ.entityToken])
+            # If it's an assembly, add all occurrences within it
+            if occ.entityToken in self.assembly_tokens:
+                for child in occ.childOccurrences:
+                    if child.entityToken in self.links_by_token:
+                        self.ignore_links.add(self.links_by_token[child.entityToken])
+        if self.ignore_links:
+            utils.log("Per config file, will ignore links: "+ ", ".join(self.ignore_links))
 
         occurrences: Dict[str, List[str]] = OrderedDict()
         for joint_name, joint_info in self.joints_dict.items():
@@ -958,6 +964,8 @@ class Configurator:
                 extra = f" [Merged from: {self.merge_links[link_name]}]"
             elif link_name in self.rigid_links:
                 extra = f" [Rigid connected to {self.rigid_links[link_name]}: {', '.join(self.merged_links_by_name[link_name][1])}]"
+            elif link_name in self.standalone_link_paths:
+                extra = f" [Single Fusion occurrence {self.standalone_link_paths[link_name]}]"
             tree_str.append("   "*level + f" - Link: {link_name}{extra}")
             for j in joint_children.get(link_name, ()):
                 if j.child not in exclude:
