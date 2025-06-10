@@ -2,7 +2,7 @@
 module to parse fusion file 
 '''
 
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, TypeVar, Union, Any, Callable
 from dataclasses import dataclass, field
 
 import adsk.core, adsk.fusion
@@ -182,7 +182,7 @@ class Configurator:
     }
 
     def __init__(self, root: adsk.fusion.Component, scale: float, cm: float, name: str, 
-                 name_map: Dict[str, str], merge_links: Dict[str, List[str]], 
+                 joint_names: Dict[str, str], merge_links: Dict[str, List[str]], 
                  rigid_links: Dict[str, str], locations: Dict[str, Dict[str, str]], 
                  extra_links: Sequence[str], root_name: Optional[str], ignore_links: Sequence[str]) -> None:
         ''' Initializes Configurator class to handle building hierarchy and parsing
@@ -213,7 +213,7 @@ class Configurator:
         self.base_link: Optional[adsk.fusion.Occurrence] = None
         self.component_map: Dict[str, Hierarchy] = OrderedDict() # Entity tokens for each component
         self.bodies_collected: Set[str] = set() # For later sanity checking - all bodies passed to URDF
-        self.name_map = name_map
+        self.joint_names = joint_names
         self.merge_links = merge_links
         self.rigid_links = rigid_links
         self.locations = locations
@@ -312,11 +312,11 @@ class Configurator:
         ''' find the base link '''
         if self.root_name is not None:
             if self.root_name is not None and self.root_name in self.merge_links:
-                self.base_link = self._resolve_name(self.merge_links[self.root_name][0])
+                self.base_link = self._resolve_occurence_name(self.merge_links[self.root_name][0])
             elif self.root_name in self.rigid_links:
-                self.base_link = self._resolve_name(self.rigid_links[self.root_name])
+                self.base_link = self._resolve_occurence_name(self.rigid_links[self.root_name])
             else:
-                self.base_link = self._resolve_name(self.root_name)
+                self.base_link = self._resolve_occurence_name(self.root_name)
         else:
             for oc in self._iterate_through_occurrences():
                 # Get only the first grounded link
@@ -330,7 +330,7 @@ class Configurator:
     def get_name(self, oc: adsk.fusion.Occurrence) -> str:
         if oc.entityToken in self.links_by_token:
             return self.links_by_token[oc.entityToken]
-        name = utils.rename_if_duplicate(self.name_map.get(oc.name, oc.name), self.links_by_name)
+        name = utils.rename_if_duplicate(oc.name, self.links_by_name)
         self.links_by_name[name] = oc
         self.links_by_token[oc.entityToken] = name
         utils.log(f"DEBUG: link '{oc.name}' ('{oc.fullPathName}') became '{name}'")
@@ -415,6 +415,11 @@ class Configurator:
                     f"Fusion errored out trying to operate on `jointMotion` of joint {joint.name}"
                     f" (between {o1} and {o2}, child of {joint.parentComponent.name}) with Health State {joint.healthState}: {e}")
 
+        joint_names_by_tok: Dict[str, str] = {}
+        for name, pattern in self.joint_names.items():
+            joint = self._resolve_joint_name(pattern)
+            joint_names_by_tok[joint.entityToken] = name
+
         for joint in sorted(self.root.allJoints, key=lambda joint: joint.name):
             if joint.healthState in [adsk.fusion.FeatureHealthStates.SuppressedFeatureHealthState, adsk.fusion.FeatureHealthStates.RolledBackFeatureHealthState]:
                 utils.log(f"Skipping joint {joint.name} (child of {joint.parentComponent.name}) as it is suppressed or rolled back")
@@ -448,7 +453,8 @@ class Configurator:
                 utils.log(f"WARNING: Failed to process joint {joint.name} (child of {joint.parentComponent.name}): {joint.isValid=}: occ_one is {None if occ_one is None else occ_one.name}, occ_two is {None if occ_two is None else occ_two.name}")
                 continue
 
-            name = utils.rename_if_duplicate(self.name_map.get(joint.name, joint.name), self.joints_dict)
+            name = joint_names_by_tok.pop(joint.entityToken, joint.name)
+            name = utils.rename_if_duplicate(name, self.joints_dict)
 
             parent = self.get_name(occ_one)
             child = self.get_name(occ_two)
@@ -523,6 +529,8 @@ class Configurator:
 
             self.joints_dict[name] = info
 
+        assert not joint_names_by_tok, f"Something is weird, this should not be possible, {joint_names_by_tok=}"
+
         # Add RigidGroups as fixed joints
         for group in sorted(self.root.allRigidGroups, key=lambda group: group.name):
             original_group_name = group.name
@@ -592,14 +600,29 @@ class Configurator:
         pref, suff = pattern
         return len(candidate) >= len(pref) + len(suff) and candidate.startswith(pref) and candidate.endswith(suff)
 
-    def _resolve_name(self, name:str) -> adsk.fusion.Occurrence:
+    JointOrOccurence = TypeVar("JointOrOccurence")
+    def _resolve_name_with_pattern(self, name: str, items: Iterable[JointOrOccurence], get_full_path: Callable[[JointOrOccurence], str], get_name: Callable[[JointOrOccurence], str]) -> JointOrOccurence:
+        """Helper function to resolve names with patterns and + separators.
+        
+        Args:
+            name: Name or pattern to match
+            items: Iterable of items to search through
+            get_full_path: Function to get full path from item
+            get_name: Function to get name from item
+            
+        Returns:
+            The matched item
+            
+        Raises:
+            ValueError: If no matches or multiple matches found
+        """
         if "+" in name:
             name_parts = name.split("+")
             l = len(name_parts)
             patts = [self._mk_pattern(p) for p in name_parts]
-            candidate: Optional[adsk.fusion.Occurrence]= None
-            for occ in self._iterate_through_occurrences():
-                path = occ.fullPathName.split("+")
+            candidates: List[Any] = []
+            for item in items:
+                path = get_full_path(item).split("+")
                 if len(path) < l:
                     continue
                 mismatch = False
@@ -609,20 +632,62 @@ class Configurator:
                         break
                 if mismatch:
                     continue
-                if candidate is None:
-                    candidate = occ
-                else:
-                    utils.fatal(f"Name/pattern '{name}' in configuration file matches at least two occurrences: '{candidate.fullPathName}' and '{occ.fullPathName}', update to be more specific")
-            if not candidate:
-                utils.fatal(f"Name/pattern '{name}' in configuration file does not match any occurrences")
-            return candidate
+                candidates.append(item)
+            if not candidates:
+                utils.fatal(f"Name/pattern '{name}' does not match any items")
+            elif len(candidates) > 1:
+                utils.fatal(f"Name/pattern '{name}' matches several items: {', '.join([get_full_path(c) for c in candidates])}, update to be more specific")
+            return candidates[0]
         patt = self._mk_pattern(name)
-        candidates = [occ for occ in self._iterate_through_occurrences() if self._match(occ.name, patt)]
+        candidates = [item for item in items if self._match(get_name(item), patt)]
         if not candidates:
-            utils.fatal(f"Name/pattern '{name}' in configuration file does not match any occurrences")
+            utils.fatal(f"Name/pattern '{name}' does not match any items")
         if len(candidates) > 1:
-            utils.fatal(f"Name/pattern '{name}' in configuration file matches at least two occurrences: '{candidates[0].fullPathName}' and '{candidates[1].fullPathName}', update to be more specific")
+            utils.fatal(f"Name/pattern '{name}' matches several items: {', '.join([get_full_path(c) for c in candidates])}, update to be more specific")
         return candidates[0]
+
+    def _resolve_occurence_name(self, name:str) -> adsk.fusion.Occurrence:
+        return self._resolve_name_with_pattern(
+            name,
+            self._iterate_through_occurrences(),
+            lambda x: x.fullPathName,
+            lambda x: x.name
+        )
+
+    def _resolve_joint_name(self, name: str) -> adsk.fusion.Joint:
+        """Resolve a joint name or pattern to a Fusion joint.
+        
+        Args:
+            name: Name or pattern to match (supports * wildcards and + separators)
+            
+        Returns:
+            The matched Fusion joint
+            
+        Raises:
+            ValueError: If no matches or multiple matches found
+        """
+        def get_joint_path(joint: adsk.fusion.Joint) -> str:
+            # Get the full path of the parent occurrence
+            parent_occ = None
+            try:
+                parent_occ = joint.occurrenceOne
+            except RuntimeError:
+                pass
+            if parent_occ is None:
+                try:
+                    parent_occ = joint.occurrenceTwo
+                except RuntimeError:
+                    pass
+            if parent_occ is None:
+                return f"{joint.parentComponent.name}+{joint.name}"
+            return f"{parent_occ.fullPathName}+{joint.name}"
+
+        return self._resolve_name_with_pattern(
+            name,
+            self.root.allJoints,
+            get_joint_path,
+            lambda x: x.name
+        )
 
     def _links(self):
         self.merged_links_by_link: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
@@ -643,7 +708,7 @@ class Configurator:
             # Process RigidLinks first
             for name, pattern in self.rigid_links.items():
                 # Resolve the starting occurrence
-                start_occ = self._resolve_name(pattern)
+                start_occ = self._resolve_occurence_name(pattern)
                 start_name = self.get_name(start_occ)
                 
                 # BFS to find all connected components
@@ -681,7 +746,7 @@ class Configurator:
                 utils.fatal(f"Invalid MergeLinks YAML config setting: merged link '{name}' is empty, which is not allowed")
             link_names = []
             for n in names:
-                occ = self._resolve_name(n)
+                occ = self._resolve_occurence_name(n)
                 if occ.entityToken in self.links_by_token or occ.entityToken in self.assembly_tokens:
                     link_names.append(self.get_name(occ))
                 if occ.entityToken in self.assembly_tokens:
@@ -702,10 +767,7 @@ class Configurator:
 
         body_names: Dict[str, Tuple[()]] = OrderedDict()
         
-        renames = set(self.name_map)
-
         for oc in self._iterate_through_occurrences():
-            renames.difference_update([oc.name])
             occ_name, _, occs = self._get_merge(oc)
             if occ_name in self.body_dict:
                 continue
@@ -727,9 +789,6 @@ class Configurator:
                         self.body_dict[occ_name].append((body, unique_bodyname))
                         bodies.add(body.entityToken)
         
-        if renames:
-            ValueError("Invalid NameMap YAML config setting: some of the links are not in Fusion: '" + "', '".join(renames) + "'")
-
     def __add_link(self, name: str, occs: List[adsk.fusion.Occurrence]):
         urdf_origin = self.link_origins[name]
         inv = urdf_origin.copy()
@@ -828,7 +887,7 @@ class Configurator:
 
         # First resolve all ignore patterns to get the actual occurrences to ignore
         for pattern in self.ignore_links_patterns:
-            occ = self._resolve_name(pattern)
+            occ = self._resolve_occurence_name(pattern)
             # Add the occurrence itself
             if occ.entityToken in self.links_by_token:
                 self.ignore_links.add(self.links_by_token[occ.entityToken])
@@ -1039,6 +1098,6 @@ class Configurator:
                 if loc_occurrence in self.merge_links:
                     ct = self.link_origins[loc_occurrence].copy()
                 else:
-                    ct = self._resolve_name(loc_occurrence).transform2.copy()
+                    ct = self._resolve_occurence_name(loc_occurrence).transform2.copy()
                 assert ct.transformBy(t)
                 self.locs[link].append(parts.Location(loc_name, [c * self.cm for c in ct.translation.asArray()], rpy = transforms.so3_to_euler(ct)))

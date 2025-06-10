@@ -8,13 +8,6 @@ TargetUnits: m
 TargetPlatform: MoveIt
 
 ### Additional URDF conversion options
-# Rename links and/or joints.
-# Maps Fusion names for occurrences and joints into URDF names for links and joints
-# For links, MergeLinks chould also be used instead (and would probably be better).
-NameMap:
-    my_big_slider: Slider
-    Rigid-Pulley-Spindle: Rev
-
 # If specified, serves as the root of the URDF regardless of what's grounded in Fusion
 # Can be either a name of the Fusion occurance (has to be a literal match), or a name
 # of a link from the MergeLinks section below.
@@ -47,6 +40,12 @@ MergeLinks:
 # rigid group or rigid link would become a single URDF link
 RigidLinks:
     AddOnComponent12: Slider Assembly v*+*+AddOn2 v*
+
+# Maps URDF joint names to Fusion joint names/paths. The Fusion names/paths can be specified with 
+# the same type of patterns as for MergeLinks and RigidLinks, except that the name of the first occurrence
+# the joint is connected to + joint name is as the Fusion "path" to the joint.
+    Slider: my_big_slider
+    Rev: Rigid-Pulley-Spindle
 
 # Use this to specify parts of the Design that should be exported, but not included in the
 # main urdf/<robot_name>.xacro. If present, that these links and the joints that connect
