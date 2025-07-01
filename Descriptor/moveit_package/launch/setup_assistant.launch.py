@@ -6,7 +6,7 @@ from moveit_configs_utils.launch_utils import (
     DeclareBooleanLaunchArg,
 )
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
     ld = LaunchDescription()
 
     ld.add_action(DeclareBooleanLaunchArg("debug", default_value=False))
