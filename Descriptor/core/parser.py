@@ -995,7 +995,7 @@ class Configurator:
         
         disconnected_external = []
         for name in self.extra_links:
-            if name in self.merge_links:
+            if name in self.merge_links or name in self.rigid_links:
                 name2, _, occs = self.merged_links_by_name[name]
                 if name2 == self.base_link_name:
                     utils.fatal(f"Link '{name2}' is the root link, but declared as an extra (that is, not a part of the main URDF)")
