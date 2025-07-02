@@ -440,10 +440,11 @@ class Configurator:
                     f"Fusion errored out trying to operate on `jointMotion` of joint {joint.name}"
                     f" (between {o1} and {o2}, child of {joint.parentComponent.name}) with Health State {joint.healthState}: {e}")
 
+        user_joint_names_by_tok: Dict[str, str] = {}
         joint_names_by_tok: Dict[str, str] = {}
         for name, pattern in self.joint_names.items():
             joint = self._resolve_joint_name(pattern)
-            joint_names_by_tok[joint.entityToken] = name
+            user_joint_names_by_tok[joint.entityToken] = name
 
         for joint in sorted(self.root.allJoints, key=lambda joint: joint.name):
             if joint.healthState in [adsk.fusion.FeatureHealthStates.SuppressedFeatureHealthState, adsk.fusion.FeatureHealthStates.RolledBackFeatureHealthState]:
@@ -478,8 +479,9 @@ class Configurator:
                 utils.log(f"WARNING: Failed to process joint {joint.name} (child of {joint.parentComponent.name}): {joint.isValid=}: occ_one is {None if occ_one is None else occ_one.name}, occ_two is {None if occ_two is None else occ_two.name}")
                 continue
 
-            name = joint_names_by_tok.pop(joint.entityToken, joint.name)
+            name = user_joint_names_by_tok.pop(joint.entityToken, joint.name)
             name = utils.rename_if_duplicate(name, self.joints_dict)
+            joint_names_by_tok[joint.entityToken] = name
 
             parent = self.get_name(occ_one)
             child = self.get_name(occ_two)
@@ -554,7 +556,7 @@ class Configurator:
 
             self.joints_dict[name] = info
 
-        assert not joint_names_by_tok, f"Something is weird, this should not be possible, {joint_names_by_tok=}"
+        assert not user_joint_names_by_tok, f"Something is weird, this should not be possible, {user_joint_names_by_tok=}"
 
         # Add RigidGroups as fixed joints
         for group in sorted(self.root.allRigidGroups, key=lambda group: group.name):
@@ -596,27 +598,18 @@ class Configurator:
 
         # Resolve split_on_joints patterns to actual joint names after all joints are processed
         for pattern in self.split_on_joints_patterns:
-            try:
-                # Try to match pattern against joint names in joints_dict
-                matching_joints = []
-                for joint_name in self.joints_dict:
-                    if self._match(joint_name, self._mk_pattern(pattern)):
-                        matching_joints.append(joint_name)
-
-                if not matching_joints:
-                    utils.fatal(f"SplitOnJoints pattern '{pattern}' does not match any joints")
-                elif len(matching_joints) > 1:
-                    utils.fatal(f"SplitOnJoints pattern '{pattern}' matches multiple joints: {matching_joints}")
-                else:
-                    joint_name = matching_joints[0]
-                    joint_info = self.joints_dict[joint_name]
-                    if joint_info.type == "fixed":
-                        self.split_on_joints.add(joint_name)
-                        utils.log(f"DEBUG: Will split RigidLinks at fixed joint '{joint_name}'")
-                    else:
-                        utils.fatal(f"Joint '{joint_name}' specified in SplitOnJoints is not a fixed joint (type: {joint_info.type})")
-            except Exception as e:
-                utils.fatal(f"Error processing SplitOnJoints pattern '{pattern}': {e}")
+            joint = self._resolve_joint_name(pattern)
+            if joint.entityToken not in joint_names_by_tok:
+                utils.fatal(f"Joint pattern '{pattern}' (matched to Fusion {joint.name}, but the joint is not in the list of valid joints - see earlier debug messages for more detail")
+            joint_name = joint_names_by_tok[joint.entityToken]
+            assert joint_name in self.joints_dict
+            if joint.jointMotion.jointType == adsk.fusion.JointTypes.RigidJointType:
+                assert self.joints_dict[joint_name].type == "fixed"
+                self.split_on_joints.add(joint_name)
+                utils.log(f"DEBUG: Will split RigidLinks at fixed joint '{joint.name}' in Fusion, '{joint_name}' in URDF")
+            else:
+                joint_type = Configurator.joint_types[joint.jointMotion.jointType]
+                utils.fatal(f"Joint pattern '{pattern}' (matched to Fusion '{joint.name}', URDF '{joint_name}') specified in SplitOnJoints is not a fixed joint (type: {joint_type})")
 
     def get_assembly_links(self, occ: adsk.fusion.Occurrence, parent_included: bool) -> List[str]:
         result: List[str] = []
