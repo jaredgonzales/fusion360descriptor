@@ -184,12 +184,35 @@ class Configurator:
     def __init__(self, root: adsk.fusion.Component, scale: float, cm: float, name: str, 
                  joint_names: Dict[str, str], merge_links: Dict[str, List[str]], 
                  rigid_links: Dict[str, str], locations: Dict[str, Dict[str, str]], 
-                 extra_links: Sequence[str], root_name: Optional[str], ignore_links: Sequence[str]) -> None:
+                 extra_links: Sequence[str], root_name: Optional[str], ignore_links: Sequence[str],
+                 split_on_joints: Sequence[str]) -> None:
         ''' Initializes Configurator class to handle building hierarchy and parsing
         Parameters
         ----------
-        root : [type]
+        root : adsk.fusion.Component
             root component of design document
+        scale : float
+            scale factor for converting from design units to target units
+        cm : float
+            conversion factor from cm to target units
+        name : str
+            robot name
+        joint_names : Dict[str, str]
+            mapping of URDF joint names to Fusion joint names/patterns
+        merge_links : Dict[str, List[str]]
+            mapping of merged link names to lists of occurrence names/patterns
+        rigid_links : Dict[str, str]
+            mapping of rigid link names to occurrence names/patterns
+        locations : Dict[str, Dict[str, str]]
+            mapping of link names to location names and occurrence patterns
+        extra_links : Sequence[str]
+            list of link names to export as extras
+        root_name : Optional[str]
+            name/pattern of occurrence to use as URDF root (overrides grounded occurrence)
+        ignore_links : Sequence[str]
+            list of occurrence name patterns to completely ignore during export
+        split_on_joints : Sequence[str]
+            list of fixed joint name patterns that should not be traversed when building RigidLinks
         '''        
         # Export top-level occurrences
         self.root = root
@@ -222,6 +245,8 @@ class Configurator:
         self.ignore_links: Set[str] = set()  # Will store resolved occurrence names
         self.root_name = root_name
         self.standalone_link_paths: Dict[str, str] = {}
+        self.split_on_joints_patterns = split_on_joints  # Store the joint patterns to split on
+        self.split_on_joints: Set[str] = set()  # Will store resolved joint names
 
         self.name = name
         self.mesh_folder = f'{name}/meshes/'
@@ -569,6 +594,30 @@ class Configurator:
                 # It's an assembly
                 self.assembly_tokens.add(occ.entityToken)
 
+        # Resolve split_on_joints patterns to actual joint names after all joints are processed
+        for pattern in self.split_on_joints_patterns:
+            try:
+                # Try to match pattern against joint names in joints_dict
+                matching_joints = []
+                for joint_name in self.joints_dict:
+                    if self._match(joint_name, self._mk_pattern(pattern)):
+                        matching_joints.append(joint_name)
+
+                if not matching_joints:
+                    utils.fatal(f"SplitOnJoints pattern '{pattern}' does not match any joints")
+                elif len(matching_joints) > 1:
+                    utils.fatal(f"SplitOnJoints pattern '{pattern}' matches multiple joints: {matching_joints}")
+                else:
+                    joint_name = matching_joints[0]
+                    joint_info = self.joints_dict[joint_name]
+                    if joint_info.type == "fixed":
+                        self.split_on_joints.add(joint_name)
+                        utils.log(f"DEBUG: Will split RigidLinks at fixed joint '{joint_name}'")
+                    else:
+                        utils.fatal(f"Joint '{joint_name}' specified in SplitOnJoints is not a fixed joint (type: {joint_info.type})")
+            except Exception as e:
+                utils.fatal(f"Error processing SplitOnJoints pattern '{pattern}': {e}")
+
     def get_assembly_links(self, occ: adsk.fusion.Occurrence, parent_included: bool) -> List[str]:
         result: List[str] = []
         for child in occ.childOccurrences:
@@ -697,11 +746,10 @@ class Configurator:
         rigid_graph: Dict[str, Set[str]] = defaultdict(set)
         
         if self.rigid_links:
-            for joint_info in self.joints_dict.values():
-                if joint_info.type == "fixed":
+            for joint_name, joint_info in self.joints_dict.items():
+                if joint_info.type == "fixed" and joint_name not in self.split_on_joints:
                     parent = joint_info.parent
-                    child = joint_info.child
-                        
+                    child = joint_info.child                        
                     rigid_graph[parent].add(child)
                     rigid_graph[child].add(parent)
 
@@ -920,18 +968,18 @@ class Configurator:
             new_boundary : Set[str] = set()
             for occ_name in boundary:
                 for joint_name in occurrences.get(occ_name, ()):
-                    joint = self.joints_dict[joint_name]
-                    if joint.parent == occ_name:
-                        child_name = joint.child
+                    joint_info = self.joints_dict[joint_name]
+                    if joint_info.parent == occ_name:
+                        child_name = joint_info.child
                         if child_name in grounded_occ:
                             continue
                         flip_axis = True
                     else:
-                        assert joint.child == occ_name
-                        if joint.parent in grounded_occ:
+                        assert joint_info.child == occ_name
+                        if joint_info.parent in grounded_occ:
                             continue
                         # Parent is further away from base_link than the child, swap them
-                        child_name = joint.parent
+                        child_name = joint_info.parent
                         flip_axis = False
 
 
@@ -948,15 +996,15 @@ class Configurator:
                     t = parent_origin.copy()
                     assert t.invert()
 
-                    axis = joint.axis
+                    axis = joint_info.axis
                     
-                    if joint.type == "fixed":
-                        fixed_links[(child_name, parent_name)] = joint.name
-                        fixed_links[(parent_name, child_name)] = joint.name
+                    if joint_info.type == "fixed":
+                        fixed_links[(child_name, parent_name)] = joint_info.name
+                        fixed_links[(parent_name, child_name)] = joint_info.name
                     else:
-                        utils.log(f"DEBUG: for non-fixed joint {joint.name}, updating child origin from {utils.ct_to_str(child_origin)} to {joint.origin.asArray()}")
+                        utils.log(f"DEBUG: for non-fixed joint {joint_info.name}, updating child origin from {utils.ct_to_str(child_origin)} to {joint_info.origin.asArray()}")
                         child_origin = child_origin.copy()
-                        child_origin.translation = joint.origin
+                        child_origin.translation = joint_info.origin
                         # The joint axis is specified in the joint (==child) frame
                         tt = child_origin.copy()
                         tt.translation = adsk.core.Vector3D.create()
@@ -965,7 +1013,7 @@ class Configurator:
                         assert axis.transformBy(tt)
                         if flip_axis:
                             assert axis.scaleBy(-1)
-                        utils.log(f"DEBUG:    and using {utils.ct_to_str(tt)} and {flip_axis=} to update axis from {joint.axis.asArray()} to {axis.asArray()}")
+                        utils.log(f"DEBUG:    and using {utils.ct_to_str(tt)} and {flip_axis=} to update axis from {joint_info.axis.asArray()} to {axis.asArray()}")
 
                     for name in [child_name] + child_link_names:
                         self.link_origins[name] = child_origin
@@ -977,15 +1025,15 @@ class Configurator:
                     rpy = transforms.so3_to_euler(ct)
 
                     utils.log(
-                        f"DEBUG: joint {joint.name} (type {joint.type})"
+                        f"DEBUG: joint {joint_info.name} (type {joint_info.type})"
                         f" from {parent_name} at {utils.vector_to_str(parent_origin.translation)}"
                         f" to {child_name} at {utils.vector_to_str(child_origin.translation)}"
                         f" -> xyz={utils.vector_to_str(xyz,5)} rpy={utils.rpy_to_str(rpy)}")
 
-                    self.joints[joint.name] = parts.Joint(name=joint.name , joint_type=joint.type, 
+                    self.joints[joint_info.name] = parts.Joint(name=joint_info.name , joint_type=joint_info.type, 
                                     xyz=xyz, rpy=rpy, axis=axis.asArray(), 
                                     parent=parent_name, child=child_name, 
-                                    upper_limit=joint.upper_limit, lower_limit=joint.lower_limit)
+                                    upper_limit=joint_info.upper_limit, lower_limit=joint_info.lower_limit)
                     
                     self.__add_link(child_name, child_link_occs)
                     new_boundary.update(child_link_names)
@@ -1013,6 +1061,7 @@ class Configurator:
             
 
         joint_children: Dict[str, List[parts.Joint]] = OrderedDict()
+        joint: parts.Joint
         for joint in self.joints.values():
             joint_children.setdefault(joint.parent, [])
             joint_children[joint.parent].append(joint)
@@ -1063,15 +1112,15 @@ class Configurator:
             utils.log(error)
         missing_joints = set(self.joints_dict).difference(self.joints)
         for joint_name in missing_joints.copy():
-            joint = self.joints_dict[joint_name]
-            if joint.parent in self.ignore_links or joint.child in self.ignore_links:
-                utils.log(f"DEBUG: Skipped Joint '{joint_name}' as one of its endpoints ({joint.parent} or {joint.child}) is in the ignore list")
+            joint_info = self.joints_dict[joint_name]
+            if joint_info.parent in self.ignore_links or joint_info.child in self.ignore_links:
+                utils.log(f"DEBUG: Skipped Joint '{joint_name}' as one of its endpoints ({joint_info.parent} or {joint_info.child}) is in the ignore list")
                 missing_joints.remove(joint_name)
-            elif joint.type == "fixed":
-                parent_name, _, _ = self._get_merge(self.links_by_name[joint.parent])
-                child_name, _, _ = self._get_merge(self.links_by_name[joint.child])
+            elif joint_info.type == "fixed":
+                parent_name, _, _ = self._get_merge(self.links_by_name[joint_info.parent])
+                child_name, _, _ = self._get_merge(self.links_by_name[joint_info.child])
                 if parent_name == child_name:
-                    utils.log(f"DEBUG: Skipped Fixed Joint '{joint_name}' that is internal for merged link {self.merged_links_by_link[joint.parent][0]}")
+                    utils.log(f"DEBUG: Skipped Fixed Joint '{joint_name}' that is internal for merged link {self.merged_links_by_link[joint_info.parent][0]}")
                     missing_joints.remove(joint_name)
                 elif (parent_name, child_name) in fixed_links:
                     utils.log(f"DEBUG: Skipped Fixed Joint '{joint_name}' that is duplicative of `{fixed_links[(parent_name, child_name)]}")

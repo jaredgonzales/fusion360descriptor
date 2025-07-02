@@ -37,15 +37,23 @@ MergeLinks:
 
 # Merge a rigid group into a single URDF link. Similar to MergeLinks,
 # but all occurrences connected to the specified occurrence of assembly via
-# rigid group or rigid link would become a single URDF link
+# rigid group or rigid link would become a single URDF link (subject to SplitOnJoints below)
 RigidLinks:
     AddOnComponent12: Slider Assembly v*+*+AddOn2 v*
 
 # Maps URDF joint names to Fusion joint names/paths. The Fusion names/paths can be specified with 
 # the same type of patterns as for MergeLinks and RigidLinks, except that the name of the first occurrence
 # the joint is connected to + joint name is as the Fusion "path" to the joint.
+JointNames:
     Slider: my_big_slider
     Rev: Rigid-Pulley-Spindle
+
+# Lists fixed joints that should not be traversed when building RigidLinks.
+# This constrains the scope of RigidLinks expansion by preventing traversal through specific fixed joints.
+# Joint names/paths can be specified using the same patterns as in JointNames.
+SplitOnJoints:
+    - Some_Fixed_Joint_Name
+    - Assembly v*+*+fixed_connection
 
 # Use this to specify parts of the Design that should be exported, but not included in the
 # main urdf/<robot_name>.xacro. If present, that these links and the joints that connect

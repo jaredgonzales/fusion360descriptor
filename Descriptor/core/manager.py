@@ -90,6 +90,7 @@ class Manager:
         self.ignore_links: List[str] = []
         self.locations: Dict[str, Dict[str,str]] = {}
         self.root_name: Optional[str] = None
+        self.split_on_joints: List[str] = []
         if config_file:
             with open(config_file, "rb") as yml:
                 configuration = yaml.load(yml, yaml.SafeLoader)
@@ -100,7 +101,7 @@ class Manager:
             wrong_keys = set(configuration).difference([
                 "RobotName", "SaveMesh", "SubMesh", "MeshResolution", "InertiaPrecision",
                 "TargetUnits", "TargetPlatform", "JointNames", "MergeLinks", "RigidLinks",
-                "Locations", "Extras", "Root", "Ignore",
+                "Locations", "Extras", "Root", "Ignore", "SplitOnJoints",
             ])
             if wrong_keys:
                 raise(ValueError(f"Malformed config '{config_file}': unexpected top-level keys: {list(wrong_keys)}"))
@@ -123,6 +124,9 @@ class Manager:
             if self.locations is None:
                 self.locations = {}
             self.root_name = configuration.get("Root")
+            self.split_on_joints = configuration.get("SplitOnJoints", [])
+            if self.split_on_joints is None:
+                self.split_on_joints = []
 
         # Set directory 
         self._set_dir(save_dir)
@@ -152,7 +156,7 @@ class Manager:
         '''        
         assert Manager.root is not None
 
-        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.joint_names, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name, self.ignore_links)
+        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.joint_names, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name, self.ignore_links, self.split_on_joints)
         config.inertia_accuracy = self.inert_accuracy
         ## Return array of tuples (parent, child)
         config.get_scene_configuration()
@@ -201,7 +205,7 @@ class Manager:
         if self._app is not None and self._app.activeViewport is not None:
             utils.viewport = self._app.activeViewport
         utils.log("*** Parsing ***")
-        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.joint_names, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name, self.ignore_links)
+        config = parser.Configurator(Manager.root, self.scale, self.cm, self.robot_name, self.joint_names, self.merge_links, self.rigid_links, self.locations, self.extra_links, self.root_name, self.ignore_links, self.split_on_joints)
         config.inertia_accuracy = self.inert_accuracy
         config.sub_mesh = self.sub_mesh
         utils.log("** Getting scene configuration **")
