@@ -1137,7 +1137,7 @@ class Configurator:
             assert t.invert()
             self.locs[link] = []
             for loc_name, loc_occurrence in locations.items():
-                if loc_occurrence in self.merge_links:
+                if loc_occurrence in self.merge_links or loc_occurrence in self.rigid_links:
                     ct = self.link_origins[loc_occurrence].copy()
                 else:
                     ct = self._resolve_occurence_name(loc_occurrence).transform2.copy()
