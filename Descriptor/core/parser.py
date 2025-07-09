@@ -766,7 +766,9 @@ class Configurator:
                             new_occs.add(self.get_name(child))
                     queue.update(new_occs.difference(visited))
             
-                connected_names = sorted(visited)
+                # The specified `start_name` must be first as it defines the overall orientation
+                visited.discard(start_name)
+                connected_names = [start_name] + sorted(visited)
                 
                 # Validate no overlap with other merged links
                 for link_name in connected_names:
@@ -982,9 +984,17 @@ class Configurator:
                     child_origin = child_link_occs[0].transform2
                     parent_origin = self.link_origins[parent_name]
 
-                    if utils.LOG_DEBUG and self.close_enough(parent_origin.getAsCoordinateSystem()[1:], adsk.core.Matrix3D.create().getAsCoordinateSystem()[1:]) and not self.close_enough(child_origin.getAsCoordinateSystem()[1:], adsk.core.Matrix3D.create().getAsCoordinateSystem()[1:]):
-                        utils.log(f"***** !!!!! rotating off the global frame's orientation")
-                        utils.log(f"      Child axis: {[v.asArray() for v in child_origin.getAsCoordinateSystem()[1:]]}")
+                    if utils.LOG_DEBUG:
+                        if not self.close_enough(parent_origin.getAsCoordinateSystem()[1:], child_origin.getAsCoordinateSystem()[1:]):
+                            utils.log(f"***** !!!!! rotating the frame orientation {parent_name} -> {child_name} !!!!")
+                            utils.log(f"      Parent axis:  {[v.asArray() for v in parent_origin.getAsCoordinateSystem()[1:]]}")
+                            utils.log(f"      Child axis:   {[v.asArray() for v in child_origin.getAsCoordinateSystem()[1:]]}")
+                            utils.log(f"      Global frame: {[v.asArray() for v in adsk.core.Matrix3D.create().getAsCoordinateSystem()[1:]]}")
+                        
+                        for lnk in child_link_occs:
+                            lnk_org = lnk.transform2
+                            utils.log(f"            Child lnk axis: {lnk.fullPathName}")
+                            utils.log(f"                    {[v.asArray() for v in lnk_org.getAsCoordinateSystem()[1:]]}")
 
                     t = parent_origin.copy()
                     assert t.invert()
