@@ -734,15 +734,30 @@ class Configurator:
     def _links(self):
         self.merged_links_by_link: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
         self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
-        
+
+        # Resolve ignore patterns early so RigidLinks processing respects them
+        for pattern in self.ignore_links_patterns:
+            try:
+                occ = self._resolve_occurence_name(pattern)
+                # Add the occurrence itself
+                if occ.entityToken in self.links_by_token:
+                    self.ignore_links.add(self.links_by_token[occ.entityToken])
+                # If it's an assembly, add all occurrences within it
+                if occ.entityToken in self.assembly_tokens:
+                    for child in occ.childOccurrences:
+                        if child.entityToken in self.links_by_token:
+                            self.ignore_links.add(self.links_by_token[child.entityToken])
+            except RuntimeError:
+                pass  # Pattern doesn't match, will be reported later in _build()
+
         # Build adjacency list from fixed joints
         rigid_graph: Dict[str, Set[str]] = defaultdict(set)
-        
+
         if self.rigid_links:
             for joint_name, joint_info in self.joints_dict.items():
                 if joint_info.type == "fixed" and joint_name not in self.split_on_joints:
                     parent = joint_info.parent
-                    child = joint_info.child                        
+                    child = joint_info.child
                     rigid_graph[parent].add(child)
                     rigid_graph[child].add(parent)
 
@@ -751,7 +766,7 @@ class Configurator:
                 # Resolve the starting occurrence
                 start_occ = self._resolve_occurence_name(pattern)
                 start_name = self.get_name(start_occ)
-                
+
                 # BFS to find all connected components
                 visited: Set[str] = set()
                 queue: Set[str] = set([start_name])
@@ -759,12 +774,23 @@ class Configurator:
                 while queue:
                     current = queue.pop()
                     visited.add(current)
-                    new_occs = rigid_graph[current]
+                    new_occs = set(rigid_graph[current])
                     occ = self.links_by_name[current]
                     if occ.entityToken in self.assembly_tokens:
                         for child in occ.childOccurrences:
-                            new_occs.add(self.get_name(child))
-                    queue.update(new_occs.difference(visited))
+                            child_name = self.get_name(child)
+                            new_occs.add(child_name)
+                    # Filter to only include:
+                    # - Components not yet visited in this BFS
+                    # - Components not already claimed by earlier RigidLinks entries
+                    # - Components that exist in links_by_name
+                    # - Components not in the ignore list
+                    valid_neighbors = {n for n in new_occs
+                                       if n not in visited
+                                       and n not in self.merged_links_by_link
+                                       and n in self.links_by_name
+                                       and n not in self.ignore_links}
+                    queue.update(valid_neighbors)
             
                 # The specified `start_name` must be first as it defines the overall orientation
                 visited.discard(start_name)
