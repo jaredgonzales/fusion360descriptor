@@ -37,7 +37,14 @@ MergeLinks:
 
 # Merge a rigid group into a single URDF link. Similar to MergeLinks,
 # but all occurrences connected to the specified occurrence of assembly via
-# rigid group or rigid link would become a single URDF link (subject to SplitOnJoints below)
+# rigid group or rigid link would become a single URDF link (subject to SplitOnJoints below).
+#
+# Important behavior notes:
+# - Processing order matters: earlier entries take precedence. If two RigidLinks entries
+#   would claim the same component, only the first one gets it (a warning is logged).
+# - Components in the Ignore list are excluded from rigid groups.
+# - The start occurrence must exist, not be already claimed by an earlier entry, and not
+#   be in the Ignore list (an error is raised if any of these conditions are violated).
 RigidLinks:
     AddOnComponent12: Slider Assembly v*+*+AddOn2 v*
 

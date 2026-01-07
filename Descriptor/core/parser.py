@@ -734,15 +734,29 @@ class Configurator:
     def _links(self):
         self.merged_links_by_link: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
         self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
-        
+
+        # Resolve ignore patterns early so RigidLinks processing respects them
+        for pattern in self.ignore_links_patterns:
+            occ = self._resolve_occurence_name(pattern)
+            # Add the occurrence itself
+            if occ.entityToken in self.links_by_token:
+                self.ignore_links.add(self.links_by_token[occ.entityToken])
+            # If it's an assembly, add all occurrences within it
+            if occ.entityToken in self.assembly_tokens:
+                for child in occ.childOccurrences:
+                    if child.entityToken in self.links_by_token:
+                        self.ignore_links.add(self.links_by_token[child.entityToken])
+        if self.ignore_links:
+            utils.log("Per config file, will ignore links: " + ", ".join(self.ignore_links))
+
         # Build adjacency list from fixed joints
         rigid_graph: Dict[str, Set[str]] = defaultdict(set)
-        
+
         if self.rigid_links:
             for joint_name, joint_info in self.joints_dict.items():
                 if joint_info.type == "fixed" and joint_name not in self.split_on_joints:
                     parent = joint_info.parent
-                    child = joint_info.child                        
+                    child = joint_info.child
                     rigid_graph[parent].add(child)
                     rigid_graph[child].add(parent)
 
@@ -751,7 +765,18 @@ class Configurator:
                 # Resolve the starting occurrence
                 start_occ = self._resolve_occurence_name(pattern)
                 start_name = self.get_name(start_occ)
-                
+
+                # Validate start_name before BFS
+                if start_name in self.merged_links_by_link:
+                    utils.fatal(f"Invalid RigidLinks YAML config setting: start occurrence '{start_name}' "
+                                f"for '{name}' is already claimed by '{self.merged_links_by_link[start_name][0]}'")
+                if start_name not in self.links_by_name:
+                    utils.fatal(f"Invalid RigidLinks YAML config setting: start occurrence '{start_name}' "
+                                f"for '{name}' does not exist in links_by_name")
+                if start_name in self.ignore_links:
+                    utils.fatal(f"Invalid RigidLinks YAML config setting: start occurrence '{start_name}' "
+                                f"for '{name}' is in the Ignore list")
+
                 # BFS to find all connected components
                 visited: Set[str] = set()
                 queue: Set[str] = set([start_name])
@@ -759,22 +784,29 @@ class Configurator:
                 while queue:
                     current = queue.pop()
                     visited.add(current)
-                    new_occs = rigid_graph[current]
+                    new_occs = set(rigid_graph[current])
                     occ = self.links_by_name[current]
                     if occ.entityToken in self.assembly_tokens:
                         for child in occ.childOccurrences:
-                            new_occs.add(self.get_name(child))
-                    queue.update(new_occs.difference(visited))
-            
+                            child_name = self.get_name(child)
+                            new_occs.add(child_name)
+                    # Filter and warn about skipped components
+                    for n in new_occs:
+                        if n in visited:
+                            continue
+                        if n in self.merged_links_by_link:
+                            utils.log(f"WARNING: RigidLinks '{name}': skipping '{n}' "
+                                      f"(already claimed by '{self.merged_links_by_link[n][0]}')")
+                            continue
+                        if n not in self.links_by_name:
+                            continue
+                        if n in self.ignore_links:
+                            continue
+                        queue.add(n)
+
                 # The specified `start_name` must be first as it defines the overall orientation
                 visited.discard(start_name)
                 connected_names = [start_name] + sorted(visited)
-                
-                # Validate no overlap with other merged links
-                for link_name in connected_names:
-                    if link_name in self.merged_links_by_link:
-                        utils.fatal(f"Invalid RigidLinks YAML config setting: {link_name} is included in both "
-                                f"rigid links '{name}' and '{self.merged_links_by_link[link_name][0]}'")
                 
                 # Store the rigid link
                 val = name, connected_names, [self.links_by_name[n] for n in connected_names]
@@ -927,20 +959,6 @@ class Configurator:
 
         # Location and XYZ of the URDF link origin w.r.t Fusion global frame in Fusion units
         self.link_origins: Dict[str, adsk.core.Matrix3D] = {}
-
-        # First resolve all ignore patterns to get the actual occurrences to ignore
-        for pattern in self.ignore_links_patterns:
-            occ = self._resolve_occurence_name(pattern)
-            # Add the occurrence itself
-            if occ.entityToken in self.links_by_token:
-                self.ignore_links.add(self.links_by_token[occ.entityToken])
-            # If it's an assembly, add all occurrences within it
-            if occ.entityToken in self.assembly_tokens:
-                for child in occ.childOccurrences:
-                    if child.entityToken in self.links_by_token:
-                        self.ignore_links.add(self.links_by_token[child.entityToken])
-        if self.ignore_links:
-            utils.log("Per config file, will ignore links: "+ ", ".join(self.ignore_links))
 
         occurrences: Dict[str, List[str]] = OrderedDict()
         for joint_name, joint_info in self.joints_dict.items():
