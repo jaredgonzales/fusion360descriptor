@@ -737,18 +737,17 @@ class Configurator:
 
         # Resolve ignore patterns early so RigidLinks processing respects them
         for pattern in self.ignore_links_patterns:
-            try:
-                occ = self._resolve_occurence_name(pattern)
-                # Add the occurrence itself
-                if occ.entityToken in self.links_by_token:
-                    self.ignore_links.add(self.links_by_token[occ.entityToken])
-                # If it's an assembly, add all occurrences within it
-                if occ.entityToken in self.assembly_tokens:
-                    for child in occ.childOccurrences:
-                        if child.entityToken in self.links_by_token:
-                            self.ignore_links.add(self.links_by_token[child.entityToken])
-            except RuntimeError:
-                pass  # Pattern doesn't match, will be reported later in _build()
+            occ = self._resolve_occurence_name(pattern)
+            # Add the occurrence itself
+            if occ.entityToken in self.links_by_token:
+                self.ignore_links.add(self.links_by_token[occ.entityToken])
+            # If it's an assembly, add all occurrences within it
+            if occ.entityToken in self.assembly_tokens:
+                for child in occ.childOccurrences:
+                    if child.entityToken in self.links_by_token:
+                        self.ignore_links.add(self.links_by_token[child.entityToken])
+        if self.ignore_links:
+            utils.log("Per config file, will ignore links: " + ", ".join(self.ignore_links))
 
         # Build adjacency list from fixed joints
         rigid_graph: Dict[str, Set[str]] = defaultdict(set)
@@ -767,6 +766,17 @@ class Configurator:
                 start_occ = self._resolve_occurence_name(pattern)
                 start_name = self.get_name(start_occ)
 
+                # Validate start_name before BFS
+                if start_name in self.merged_links_by_link:
+                    utils.fatal(f"Invalid RigidLinks YAML config setting: start occurrence '{start_name}' "
+                                f"for '{name}' is already claimed by '{self.merged_links_by_link[start_name][0]}'")
+                if start_name not in self.links_by_name:
+                    utils.fatal(f"Invalid RigidLinks YAML config setting: start occurrence '{start_name}' "
+                                f"for '{name}' does not exist in links_by_name")
+                if start_name in self.ignore_links:
+                    utils.fatal(f"Invalid RigidLinks YAML config setting: start occurrence '{start_name}' "
+                                f"for '{name}' is in the Ignore list")
+
                 # BFS to find all connected components
                 visited: Set[str] = set()
                 queue: Set[str] = set([start_name])
@@ -780,27 +790,23 @@ class Configurator:
                         for child in occ.childOccurrences:
                             child_name = self.get_name(child)
                             new_occs.add(child_name)
-                    # Filter to only include:
-                    # - Components not yet visited in this BFS
-                    # - Components not already claimed by earlier RigidLinks entries
-                    # - Components that exist in links_by_name
-                    # - Components not in the ignore list
-                    valid_neighbors = {n for n in new_occs
-                                       if n not in visited
-                                       and n not in self.merged_links_by_link
-                                       and n in self.links_by_name
-                                       and n not in self.ignore_links}
-                    queue.update(valid_neighbors)
-            
+                    # Filter and warn about skipped components
+                    for n in new_occs:
+                        if n in visited:
+                            continue
+                        if n in self.merged_links_by_link:
+                            utils.log(f"WARNING: RigidLinks '{name}': skipping '{n}' "
+                                      f"(already claimed by '{self.merged_links_by_link[n][0]}')")
+                            continue
+                        if n not in self.links_by_name:
+                            continue
+                        if n in self.ignore_links:
+                            continue
+                        queue.add(n)
+
                 # The specified `start_name` must be first as it defines the overall orientation
                 visited.discard(start_name)
                 connected_names = [start_name] + sorted(visited)
-                
-                # Validate no overlap with other merged links
-                for link_name in connected_names:
-                    if link_name in self.merged_links_by_link:
-                        utils.fatal(f"Invalid RigidLinks YAML config setting: {link_name} is included in both "
-                                f"rigid links '{name}' and '{self.merged_links_by_link[link_name][0]}'")
                 
                 # Store the rigid link
                 val = name, connected_names, [self.links_by_name[n] for n in connected_names]
@@ -953,20 +959,6 @@ class Configurator:
 
         # Location and XYZ of the URDF link origin w.r.t Fusion global frame in Fusion units
         self.link_origins: Dict[str, adsk.core.Matrix3D] = {}
-
-        # First resolve all ignore patterns to get the actual occurrences to ignore
-        for pattern in self.ignore_links_patterns:
-            occ = self._resolve_occurence_name(pattern)
-            # Add the occurrence itself
-            if occ.entityToken in self.links_by_token:
-                self.ignore_links.add(self.links_by_token[occ.entityToken])
-            # If it's an assembly, add all occurrences within it
-            if occ.entityToken in self.assembly_tokens:
-                for child in occ.childOccurrences:
-                    if child.entityToken in self.links_by_token:
-                        self.ignore_links.add(self.links_by_token[child.entityToken])
-        if self.ignore_links:
-            utils.log("Per config file, will ignore links: "+ ", ".join(self.ignore_links))
 
         occurrences: Dict[str, List[str]] = OrderedDict()
         for joint_name, joint_info in self.joints_dict.items():
