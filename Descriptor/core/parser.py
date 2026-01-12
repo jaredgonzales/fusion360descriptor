@@ -736,18 +736,16 @@ class Configurator:
         self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
 
         # Resolve ignore patterns early so RigidLinks processing respects them
-        def add_occ_and_descendants_to_ignore(occ: adsk.fusion.Occurrence) -> None:
-            """Recursively add an occurrence and all its descendants to the ignore list."""
-            if occ.entityToken in self.links_by_token:
-                self.ignore_links.add(self.links_by_token[occ.entityToken])
-            # If it's an assembly, recursively add all child occurrences
-            if occ.entityToken in self.assembly_tokens:
-                for child in occ.childOccurrences:
-                    add_occ_and_descendants_to_ignore(child)
-
         for pattern in self.ignore_links_patterns:
             occ = self._resolve_occurence_name(pattern)
-            add_occ_and_descendants_to_ignore(occ)
+            # Add the occurrence itself
+            if occ.entityToken in self.links_by_token:
+                self.ignore_links.add(self.links_by_token[occ.entityToken])
+            # If it's an assembly, add all occurrences within it
+            if occ.entityToken in self.assembly_tokens:
+                for child in occ.childOccurrences:
+                    if child.entityToken in self.links_by_token:
+                        self.ignore_links.add(self.links_by_token[child.entityToken])
         if self.ignore_links:
             utils.log("Per config file, will ignore links: " + ", ".join(self.ignore_links))
 
