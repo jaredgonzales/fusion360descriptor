@@ -585,9 +585,9 @@ class Configurator:
                 parent_occ_name = self.get_name(parent_occ)  # type: ignore[undef]
                 occ_name = self.get_name(occ)
                 utils.log(
-                    f"DEBUG: Got from Fusion: {rigid_group_occ_name}, connecting",
-                    f"parent {parent_occ_name} @ {utils.vector_to_str(parent_occ.transform2.translation)} and" # type: ignore[undef]
-                    f"child {occ_name} {utils.vector_to_str(occ.transform2.translation)}")
+                    f"DEBUG: Got from Fusion: {rigid_group_occ_name}, connecting "
+                    f"parent {parent_occ_name} @ {utils.vector_to_str(parent_occ.transform2.translation)} and "  # type: ignore[undef]
+                    f"child {occ_name} @ {utils.vector_to_str(occ.transform2.translation)}")
                 self.joints_dict[rigid_group_occ_name] = JointInfo(name=rigid_group_occ_name, parent=parent_occ_name, child=occ_name)
         
         self.assembly_tokens: Set[str] = set()
@@ -736,18 +736,23 @@ class Configurator:
         self.merged_links_by_name: Dict[str, Tuple[str, List[str], List[adsk.fusion.Occurrence]]] = OrderedDict()
 
         # Resolve ignore patterns early so RigidLinks processing respects them
+        # Use path-based matching to find the ignored occurrence AND all its descendants
+        # (childOccurrences entity tokens don't match links_by_token, so we use fullPathName instead)
         for pattern in self.ignore_links_patterns:
-            occ = self._resolve_occurence_name(pattern)
-            # Add the occurrence itself
-            if occ.entityToken in self.links_by_token:
-                self.ignore_links.add(self.links_by_token[occ.entityToken])
-            # If it's an assembly, add all occurrences within it
-            if occ.entityToken in self.assembly_tokens:
-                for child in occ.childOccurrences:
-                    if child.entityToken in self.links_by_token:
-                        self.ignore_links.add(self.links_by_token[child.entityToken])
+            occ = self._resolve_occurence_name(pattern)  # Will fatal if pattern doesn't match
+            ignored_path = occ.fullPathName
+            utils.log(f"DEBUG Ignore: Processing pattern '{pattern}' -> path '{ignored_path}'")
+
+            # Find all links whose fullPathName matches or is a descendant of the ignored path
+            for link_name, link_occ in self.links_by_name.items():
+                link_path = link_occ.fullPathName
+                # Check if this link IS the ignored occurrence or is a descendant of it
+                if link_path == ignored_path or link_path.startswith(ignored_path + "+"):
+                    utils.log(f"DEBUG Ignore:   Adding '{link_name}' to ignore_links (path: {link_path})")
+                    self.ignore_links.add(link_name)
+
         if self.ignore_links:
-            utils.log("Per config file, will ignore links: " + ", ".join(self.ignore_links))
+            utils.log("Per config file, will ignore links: " + ", ".join(sorted(self.ignore_links)))
 
         # Build adjacency list from fixed joints
         rigid_graph: Dict[str, Set[str]] = defaultdict(set)
@@ -998,6 +1003,11 @@ class Configurator:
 
                     parent_name, _, _ = self._get_merge(self.links_by_name[occ_name])
                     child_name, child_link_names, child_link_occs = self._get_merge(self.links_by_name[child_name])
+
+                    # Skip if the child link or any of its constituent occurrences are in the ignore list
+                    if child_name in self.ignore_links or any(n in self.ignore_links for n in child_link_names):
+                        utils.log(f"DEBUG: Skipping joint {joint_name} as child '{child_name}' (or one of {child_link_names}) is in the ignore list")
+                        continue
 
                     child_origin = child_link_occs[0].transform2
                     parent_origin = self.link_origins[parent_name]
